@@ -2,7 +2,7 @@
 
 import Image from 'next/image';
 import dynamic from 'next/dynamic';
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 
 import styles from './page.module.css';
 
@@ -25,7 +25,7 @@ import {
   transactionBuilder,
   unwrapSome,
   type Option,
-  type PublicKey,
+  type PublicKey as UmiPublicKey,
   type SolAmount,
   type Umi,
 } from '@metaplex-foundation/umi';
@@ -52,30 +52,29 @@ const WalletMultiButtonDynamic = dynamic(
 );
 
 function getNetwork(): WalletAdapterNetwork {
-  const n = (process.env.NEXT_PUBLIC_NETWORK || '').toLowerCase().trim();
+  const n = (process.env.NEXT_PUBLIC_NETWORK || 'mainnet-beta').toLowerCase().trim();
   if (n === 'devnet') return WalletAdapterNetwork.Devnet;
   if (n === 'testnet') return WalletAdapterNetwork.Testnet;
   return WalletAdapterNetwork.Mainnet;
 }
 
 function getEndpoint(): string {
+  // In Vercel: zet NEXT_PUBLIC_RPC_URL als volledige URL: https://.......
   const rpc = (process.env.NEXT_PUBLIC_RPC_URL || '').trim();
+  if (rpc && (rpc.startsWith('https://') || rpc.startsWith('http://'))) return rpc;
 
-  // Must be a full URL like https://...
-  if (!rpc || !rpc.startsWith('http')) {
-    // Fallbacks (but you should set RPC in .env.local)
-    const network = getNetwork();
-    if (network === WalletAdapterNetwork.Devnet) return 'https://api.devnet.solana.com';
-    if (network === WalletAdapterNetwork.Testnet) return 'https://api.testnet.solana.com';
-    return 'https://api.mainnet-beta.solana.com';
-  }
-  return rpc;
+  // fallback
+  const network = getNetwork();
+  if (network === WalletAdapterNetwork.Devnet) return 'https://api.devnet.solana.com';
+  if (network === WalletAdapterNetwork.Testnet) return 'https://api.testnet.solana.com';
+  return 'https://api.mainnet-beta.solana.com';
 }
 
 function getCandyMachineId(): string | null {
-  const id = (process.env.NEXT_PUBLIC_CANDY_MACHINE_ID || '').trim();
-  if (!id) return null;
-  return id;
+  const raw = process.env.NEXT_PUBLIC_CANDY_MACHINE_ID;
+  if (!raw) return null;
+  // strip whitespace + quotes
+  return raw.trim().replace(/^["']|["']$/g, '');
 }
 
 export default function Home() {
@@ -91,40 +90,39 @@ export default function Home() {
     [network]
   );
 
-  // UMI base instance (identity is injected later inside Mint() once wallet is connected)
-  const [umi] = useState<Umi>(() =>
-    createUmi(endpoint).use(mplTokenMetadata()).use(mplCandyMachine())
-  );
+  // Base umi (zonder wallet identity)
+  const umiBase: Umi = useMemo(() => {
+    return createUmi(endpoint).use(mplTokenMetadata()).use(mplCandyMachine());
+  }, [endpoint]);
 
   // State
   const [loading, setLoading] = useState(false);
-  const [mintCreated, setMintCreated] = useState<PublicKey | null>(null);
+  const [mintCreated, setMintCreated] = useState<UmiPublicKey | null>(null);
   const [mintMsg, setMintMsg] = useState<string | undefined>(undefined);
 
   const [cm, setCm] = useState<CandyMachine | null>(null);
   const [guard, setGuard] = useState<CandyGuard<DefaultGuardSet> | null>(null);
 
-  const [countTotal, setCountTotal] = useState<number | null>(null);
-  const [countMinted, setCountMinted] = useState<number | null>(null);
-  const [countRemaining, setCountRemaining] = useState<number | null>(null);
+  const [countTotal, setCountTotal] = useState<number>(0);
+  const [countMinted, setCountMinted] = useState<number>(0);
+  const [countRemaining, setCountRemaining] = useState<number>(0);
 
   const [costInSol, setCostInSol] = useState<number>(0);
   const [mintDisabled, setMintDisabled] = useState<boolean>(true);
 
   // Load CM + Guard + counts + cost
-  const retrieveAvailability = async () => {
+  const retrieveAvailability = useCallback(async () => {
     try {
       setMintMsg(undefined);
 
       const cmIdStr = getCandyMachineId();
       if (!cmIdStr) {
-        setMintMsg('No candy machine ID found. Set NEXT_PUBLIC_CANDY_MACHINE_ID in .env.local.');
+        setMintMsg('No candy machine ID found. Set NEXT_PUBLIC_CANDY_MACHINE_ID.');
         setMintDisabled(true);
         return;
       }
 
-      // Validate public key format early (this prevents "Invalid public key" crashes)
-      let cmPk;
+      let cmPk: UmiPublicKey;
       try {
         cmPk = publicKey(cmIdStr);
       } catch {
@@ -133,7 +131,7 @@ export default function Home() {
         return;
       }
 
-      const candyMachine = await fetchCandyMachine(umi, cmPk);
+      const candyMachine = await fetchCandyMachine(umiBase, cmPk);
       setCm(candyMachine);
 
       const total = candyMachine.itemsLoaded;
@@ -144,77 +142,80 @@ export default function Home() {
       setCountMinted(minted);
       setCountRemaining(remaining);
 
-      // Fetch guard (in CMv3: usually on mintAuthority)
-      const cg = await safeFetchCandyGuard(umi, candyMachine.mintAuthority);
-      if (cg) setGuard(cg);
-      else setGuard(null);
+      // Guard ophalen
+      const cg = await safeFetchCandyGuard(umiBase, candyMachine.mintAuthority);
+      setGuard(cg ?? null);
 
-      // Cost from solPayment guard (if present)
+      // Cost uit solPayment (als aanwezig)
+      let solCost = 0;
       const defaultGuards: DefaultGuardSet | undefined = cg?.guards;
       const solPaymentGuard: Option<SolPayment> | undefined = defaultGuards?.solPayment;
 
       if (solPaymentGuard) {
         const solPayment = unwrapSome(solPaymentGuard);
-        const lamports: SolAmount = solPayment.lamports;
-        const solCost = Number(lamports.basisPoints) / 1_000_000_000;
-        setCostInSol(solCost);
-      } else {
-        setCostInSol(0);
+        if (solPayment) {
+          const lamports: SolAmount = solPayment.lamports;
+          solCost = Number(lamports.basisPoints) / 1_000_000_000;
+        }
       }
 
+      setCostInSol(solCost);
       setMintDisabled(!(remaining > 0));
     } catch (e: any) {
       console.error(e);
-      setMintMsg(
-        `Could not fetch candy machine. Check RPC and network. Details: ${e?.message || String(e)}`
-      );
+      setMintMsg(`Could not fetch candy machine. Details: ${e?.message || String(e)}`);
       setMintDisabled(true);
     }
-  };
+  }, [umiBase]);
 
   useEffect(() => {
     retrieveAvailability();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [mintCreated]);
+  }, [retrieveAvailability, mintCreated]);
 
-  // Inner component that binds wallet identity to umi
   const Mint = () => {
     const wallet = useWallet();
 
-    // Inject wallet identity into umi when connected
-    useEffect(() => {
-      if (wallet?.connected) {
-        umi.use(walletAdapterIdentity(wallet));
-      }
-      // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [wallet?.connected]);
+    // umi mét wallet identity (alleen als wallet connected)
+    const umi = useMemo(() => {
+      return umiBase.use(walletAdapterIdentity(wallet));
+    }, [umiBase, wallet]);
 
-    // Check balance when wallet is connected and cost is known
+    // check balance zodra wallet connected en prijs bekend
     useEffect(() => {
+      let cancelled = false;
+
       const run = async () => {
         if (!wallet.connected) return;
+
+        // Free mint of 0: alleen remaining check
         if (costInSol <= 0) {
-          // Free mint: allow if remaining > 0
-          setMintDisabled(!(countRemaining !== null && countRemaining > 0));
+          if (!cancelled) setMintDisabled(!(countRemaining > 0));
           return;
         }
+
         try {
           const balance: SolAmount = await umi.rpc.getBalance(umi.identity.publicKey);
           const sol = Number(balance.basisPoints) / 1_000_000_000;
+
+          if (cancelled) return;
+
           if (sol < costInSol) {
             setMintMsg('Add more SOL to your wallet.');
             setMintDisabled(true);
           } else {
-            setMintDisabled(!(countRemaining !== null && countRemaining > 0));
+            setMintDisabled(!(countRemaining > 0));
           }
         } catch (e: any) {
           console.error(e);
-          setMintMsg(`Could not read wallet balance: ${e?.message || String(e)}`);
+          if (!cancelled) setMintMsg(`Could not read wallet balance: ${e?.message || String(e)}`);
         }
       };
+
       run();
-      // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [wallet.connected, costInSol, countRemaining]);
+      return () => {
+        cancelled = true;
+      };
+    }, [wallet.connected, umi, costInSol, countRemaining]);
 
     const mintBtnHandler = async () => {
       if (!wallet.connected) {
@@ -230,25 +231,20 @@ export default function Home() {
       setMintMsg(undefined);
 
       try {
-        // If a guard exists, we may need mintArgs
         const mintArgs: Partial<DefaultGuardSetMintArgs> = {};
 
-        if (guard) {
-          const defaultGuards: DefaultGuardSet | undefined = guard.guards;
-          const solPaymentGuard: Option<SolPayment> | undefined = defaultGuards?.solPayment;
+        // Als er solPayment guard is, moet destination mee in mintArgs
+        const defaultGuards: DefaultGuardSet | undefined = guard?.guards;
+        const solPaymentGuard: Option<SolPayment> | undefined = defaultGuards?.solPayment;
 
-          if (solPaymentGuard) {
-  const solPayment = unwrapSome(solPaymentGuard);
-  if (solPayment != null) {
-    const lamports = solPayment.lamports;
-    const solCost = Number(lamports.basisPoints) / 1_000_000_000;
-    setCostInSol(solCost);
-  } else {
-    // Als er geen solPayment guard actief is, toon bv 0 of laat het staan
-    setCostInSol(0);
-  }
-}
-
+        if (solPaymentGuard) {
+          const solPayment = unwrapSome(solPaymentGuard);
+          if (solPayment) {
+            mintArgs.solPayment = some({
+              destination: solPayment.destination,
+            });
+          }
+        }
 
         const nftSigner = generateSigner(umi);
 
@@ -260,19 +256,17 @@ export default function Home() {
               collectionMint: cm.collectionMint,
               collectionUpdateAuthority: cm.authority,
               nftMint: nftSigner,
-              candyGuard: guard?.publicKey, // ok if undefined (no guard)
+              candyGuard: guard?.publicKey, // ok als undefined
               mintArgs,
-              // Most CMv3 mints are NonFungible. If your CM is pNFT, you can switch.
-              tokenStandard: TokenStandard.NonFungible,
+              tokenStandard: TokenStandard.ProgrammableNonFungible,
             })
           );
 
-        const { signature } = await tx.sendAndConfirm(umi, {
+        await tx.sendAndConfirm(umi, {
           confirm: { commitment: 'finalized' },
           send: { skipPreflight: false },
         });
 
-        console.log('Mint signature:', signature);
         setMintCreated(nftSigner.publicKey);
         setMintMsg('Mint was successful!');
       } catch (err: any) {
@@ -331,9 +325,7 @@ export default function Home() {
         <main className={styles.main}>
           <WalletMultiButtonDynamic />
 
-          <h1>
-            Mint UI (CMv3)
-          </h1>
+          <h1>Mint UI (CMv3)</h1>
 
           <Image
             className={styles.logo}
@@ -345,8 +337,10 @@ export default function Home() {
           />
 
           <div className={styles.countsContainer}>
-            <div>Minted: {countMinted ?? '-'} / {countTotal ?? '-'}</div>
-            <div>Remaining: {countRemaining ?? '-'}</div>
+            <div>
+              Minted: {countMinted} / {countTotal}
+            </div>
+            <div>Remaining: {countRemaining}</div>
           </div>
 
           <Mint />
