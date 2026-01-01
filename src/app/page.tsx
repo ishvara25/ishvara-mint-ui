@@ -238,12 +238,17 @@ export default function Home() {
           const solPaymentGuard: Option<SolPayment> | undefined = defaultGuards?.solPayment;
 
           if (solPaymentGuard) {
-            const solPayment = unwrapSome(solPaymentGuard);
-            mintArgs.solPayment = some({
-              destination: solPayment.destination,
-            });
-          }
-        }
+  const solPayment = unwrapSome(solPaymentGuard);
+  if (solPayment != null) {
+    const lamports = solPayment.lamports;
+    const solCost = Number(lamports.basisPoints) / 1_000_000_000;
+    setCostInSol(solCost);
+  } else {
+    // Als er geen solPayment guard actief is, toon bv 0 of laat het staan
+    setCostInSol(0);
+  }
+}
+
 
         const nftSigner = generateSigner(umi);
 
