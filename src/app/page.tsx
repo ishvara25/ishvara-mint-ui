@@ -1,9 +1,10 @@
 'use client';
 
-import dynamic from 'next/dynamic';
 import Image from 'next/image';
-import { useEffect, useMemo, useState } from 'react';
-import Link from 'next/link';
+import dynamic from 'next/dynamic';
+import { useCallback, useEffect, useMemo, useState } from 'react';
+
+import styles from './page.module.css';
 
 import { WalletAdapterNetwork } from '@solana/wallet-adapter-base';
 import { WalletProvider, useWallet } from '@solana/wallet-adapter-react';
@@ -19,9 +20,9 @@ import { createUmi } from '@metaplex-foundation/umi-bundle-defaults';
 import {
   base58PublicKey,
   generateSigner,
+  isSome,
   publicKey,
   transactionBuilder,
-  unwrapSome,
   type Option,
   type PublicKey,
   type SolAmount,
@@ -49,11 +50,12 @@ const WalletMultiButtonDynamic = dynamic(
   { ssr: false }
 );
 
+/** ---------- Env helpers ---------- */
 function getNetwork(): WalletAdapterNetwork {
   const n = (process.env.NEXT_PUBLIC_NETWORK || '').toLowerCase().trim();
   if (n === 'devnet') return WalletAdapterNetwork.Devnet;
   if (n === 'testnet') return WalletAdapterNetwork.Testnet;
-  return WalletAdapterNetwork.Mainnet;
+  return WalletAdapterNetwork.Mainnet; // default
 }
 
 function getEndpoint(): string {
@@ -72,156 +74,35 @@ function getCandyMachineId(): string | null {
   return id ? id : null;
 }
 
-/** Small helper: section wrapper */
-function Section({
-  id,
-  children,
-  style,
-}: {
-  id: string;
-  children: React.ReactNode;
-  style?: React.CSSProperties;
-}) {
-  return (
-    <section
-      id={id}
-      style={{
-        width: '100%',
-        display: 'flex',
-        justifyContent: 'center',
-        padding: '72px 16px',
-        ...style,
-      }}
-    >
-      <div
-        style={{
-          width: '100%',
-          maxWidth: 980,
-          display: 'flex',
-          flexDirection: 'column',
-          gap: 20,
-        }}
-      >
-        {children}
-      </div>
-    </section>
-  );
+/** ---------- Small UI helpers ---------- */
+function shorten(addr: string, left = 4, right = 4) {
+  if (!addr) return '';
+  if (addr.length <= left + right + 3) return addr;
+  return `${addr.slice(0, left)}…${addr.slice(-right)}`;
 }
 
-/** Simple icon buttons (no extra libs, keeps it clean) */
-function SocialRow() {
-  const iconBtn: React.CSSProperties = {
-    display: 'inline-flex',
-    alignItems: 'center',
-    gap: 10,
-    padding: '10px 12px',
-    borderRadius: 14,
-    border: '1px solid rgba(255,255,255,0.18)',
-    background: 'rgba(0,0,0,0.25)',
-    color: 'white',
-    textDecoration: 'none',
-    fontSize: 14,
-  };
-
-  return (
-    <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
-      {/* Replace hrefs with your real links */}
-      <a style={iconBtn} href="https://x.com/ishvara_x" target="_blank" rel="noreferrer">
-        <span>𝕏</span> <span>Follow</span>
-      </a>
-      <a style={iconBtn} href="#" target="_blank" rel="noreferrer">
-        <span>💬</span> <span>Discord</span>
-      </a>
-      <a style={iconBtn} href="#" target="_blank" rel="noreferrer">
-        <span>📣</span> <span>Telegram</span>
-      </a>
-    </div>
-  );
-}
-
-/** Email signup (front-end only). Later you plug this into a service. */
-function EmailCapture() {
-  const [email, setEmail] = useState('');
-  const [msg, setMsg] = useState<string | null>(null);
-
-  const submit = (e: React.FormEvent) => {
-    e.preventDefault();
-    // front-end only for now
-    if (!email.includes('@')) {
-      setMsg('Please enter a valid email.');
-      return;
-    }
-    setMsg('Saved (demo). Later we connect this to a mailing service.');
-    setEmail('');
-  };
-
-  return (
-    <form
-      onSubmit={submit}
-      style={{
-        display: 'flex',
-        gap: 10,
-        flexWrap: 'wrap',
-        alignItems: 'center',
-      }}
-    >
-      <input
-        value={email}
-        onChange={(e) => setEmail(e.target.value)}
-        placeholder="Email for updates"
-        style={{
-          flex: '1 1 240px',
-          padding: '12px 14px',
-          borderRadius: 14,
-          border: '1px solid rgba(255,255,255,0.18)',
-          background: 'rgba(0,0,0,0.25)',
-          color: 'white',
-          outline: 'none',
-        }}
-      />
-      <button
-        type="submit"
-        style={{
-          padding: '12px 16px',
-          borderRadius: 14,
-          border: '1px solid rgba(255,255,255,0.18)',
-          background: 'rgba(255,255,255,0.12)',
-          color: 'white',
-          cursor: 'pointer',
-          fontWeight: 600,
-        }}
-      >
-        Notify me
-      </button>
-      {msg && (
-        <div style={{ width: '100%', color: 'rgba(255,255,255,0.85)', fontSize: 13 }}>
-          {msg}
-        </div>
-      )}
-    </form>
-  );
-}
-
-export default function Page() {
+export default function Home() {
   const network = getNetwork();
   const endpoint = getEndpoint();
 
   const wallets = useMemo(
-    () => [new PhantomWalletAdapter(), new SolflareWalletAdapter({ network }), new LedgerWalletAdapter()],
+    () => [
+      new PhantomWalletAdapter(),
+      new SolflareWalletAdapter({ network }),
+      new LedgerWalletAdapter(),
+    ],
     [network]
   );
 
-  // UMI base instance
   const [umi] = useState<Umi>(() => createUmi(endpoint).use(mplTokenMetadata()).use(mplCandyMachine()));
 
-  // CM state
-  const [cm, setCm] = useState<CandyMachine | null>(null);
-  const [guard, setGuard] = useState<CandyGuard<DefaultGuardSet> | null>(null);
-
-  // UI state
+  /** ---------- Global state ---------- */
   const [loading, setLoading] = useState(false);
   const [mintCreated, setMintCreated] = useState<PublicKey | null>(null);
-  const [mintMsg, setMintMsg] = useState<string | null>(null);
+  const [mintMsg, setMintMsg] = useState<string | undefined>(undefined);
+
+  const [cm, setCm] = useState<CandyMachine | null>(null);
+  const [guard, setGuard] = useState<CandyGuard<DefaultGuardSet> | null>(null);
 
   const [countTotal, setCountTotal] = useState<number | null>(null);
   const [countMinted, setCountMinted] = useState<number | null>(null);
@@ -230,13 +111,14 @@ export default function Page() {
   const [costInSol, setCostInSol] = useState<number>(0);
   const [mintDisabled, setMintDisabled] = useState<boolean>(true);
 
-  const retrieveAvailability = async () => {
+  /** ---------- Fetch CM + Guard + price ---------- */
+  const retrieveAvailability = useCallback(async () => {
     try {
-      setMintMsg(null);
+      setMintMsg(undefined);
 
       const cmIdStr = getCandyMachineId();
       if (!cmIdStr) {
-        setMintMsg('Missing NEXT_PUBLIC_CANDY_MACHINE_ID in Vercel env vars.');
+        setMintMsg('No candy machine ID found. Set NEXT_PUBLIC_CANDY_MACHINE_ID in Vercel / .env.local.');
         setMintDisabled(true);
         return;
       }
@@ -255,7 +137,7 @@ export default function Page() {
 
       const total = candyMachine.itemsLoaded;
       const minted = Number(candyMachine.itemsRedeemed);
-      const remaining = total - minted;
+      const remaining = Math.max(0, total - minted);
 
       setCountTotal(total);
       setCountMinted(minted);
@@ -264,12 +146,12 @@ export default function Page() {
       const cg = await safeFetchCandyGuard(umi, candyMachine.mintAuthority);
       setGuard(cg ?? null);
 
+      // Price from solPayment guard (safe w/ strict null checks)
       const defaultGuards: DefaultGuardSet | undefined = cg?.guards;
       const solPaymentGuard: Option<SolPayment> | undefined = defaultGuards?.solPayment;
 
-      if (solPaymentGuard) {
-        const solPayment = unwrapSome(solPaymentGuard);
-        const lamports: SolAmount = solPayment.lamports;
+      if (solPaymentGuard && isSome(solPaymentGuard)) {
+        const lamports = solPaymentGuard.value.lamports;
         const solCost = Number(lamports.basisPoints) / 1_000_000_000;
         setCostInSol(solCost);
       } else {
@@ -282,34 +164,32 @@ export default function Page() {
       setMintMsg(`Could not fetch candy machine. Check RPC/network. Details: ${e?.message || String(e)}`);
       setMintDisabled(true);
     }
-  };
+  }, [umi]);
 
   useEffect(() => {
     retrieveAvailability();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [mintCreated]);
+  }, [retrieveAvailability, mintCreated]);
 
+  /** ---------- Mint block component (uses wallet) ---------- */
   const MintBlock = () => {
     const wallet = useWallet();
 
-    // bind wallet identity
+    // Bind wallet to Umi identity
     useEffect(() => {
-      if (wallet.connected) umi.use(walletAdapterIdentity(wallet));
+      if (wallet?.connected) {
+        umi.use(walletAdapterIdentity(wallet));
+      }
       // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [wallet.connected]);
+    }, [wallet?.connected]);
 
-    // optional: quick balance check for paid mints
+    // Balance check (optional)
     useEffect(() => {
       const run = async () => {
         if (!wallet.connected) return;
 
-        if (countRemaining !== null && countRemaining <= 0) {
-          setMintDisabled(true);
-          return;
-        }
-
+        // Free mint -> only check remaining
         if (costInSol <= 0) {
-          setMintDisabled(false);
+          setMintDisabled(!(countRemaining !== null && countRemaining > 0));
           return;
         }
 
@@ -317,16 +197,17 @@ export default function Page() {
           const balance: SolAmount = await umi.rpc.getBalance(umi.identity.publicKey);
           const sol = Number(balance.basisPoints) / 1_000_000_000;
           if (sol < costInSol) {
-            setMintMsg('Not enough SOL in wallet.');
+            setMintMsg('Add more SOL to your wallet.');
             setMintDisabled(true);
           } else {
-            setMintDisabled(false);
+            setMintDisabled(!(countRemaining !== null && countRemaining > 0));
           }
         } catch (e: any) {
           console.error(e);
           setMintMsg(`Could not read wallet balance: ${e?.message || String(e)}`);
         }
       };
+
       run();
       // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [wallet.connected, costInSol, countRemaining]);
@@ -337,17 +218,17 @@ export default function Page() {
         return;
       }
       if (!cm) {
-        setMintMsg('Candy Machine not loaded (refresh).');
+        setMintMsg('Candy Machine not loaded yet. Refresh the page.');
         return;
       }
 
       setLoading(true);
-      setMintMsg(null);
+      setMintMsg(undefined);
 
       try {
         const mintArgs: Partial<DefaultGuardSetMintArgs> = {};
-
-        // If you later add guards (allowlist, startDate, etc.) you’ll fill mintArgs here.
+        // Most guards don’t require args if configured on-chain.
+        // If later you enable allowList, gatekeeper, etc., we’ll add mintArgs.
 
         const nftSigner = generateSigner(umi);
 
@@ -359,7 +240,7 @@ export default function Page() {
               collectionMint: cm.collectionMint,
               collectionUpdateAuthority: cm.authority,
               nftMint: nftSigner,
-              candyGuard: guard?.publicKey,
+              candyGuard: guard?.publicKey, // ok if undefined
               mintArgs,
               tokenStandard: TokenStandard.NonFungible,
             })
@@ -372,7 +253,7 @@ export default function Page() {
 
         console.log('Mint signature:', signature);
         setMintCreated(nftSigner.publicKey);
-        setMintMsg('Mint successful.');
+        setMintMsg('Mint was successful!');
       } catch (err: any) {
         console.error(err);
         setMintMsg(err?.message || String(err));
@@ -381,342 +262,330 @@ export default function Page() {
       }
     };
 
-    const pill: React.CSSProperties = {
-      display: 'inline-flex',
-      alignItems: 'center',
-      gap: 8,
-      padding: '8px 12px',
-      borderRadius: 999,
-      border: '1px solid rgba(255,255,255,0.18)',
-      background: 'rgba(0,0,0,0.25)',
-      color: 'white',
-      fontSize: 13,
-    };
+    const cluster = network === WalletAdapterNetwork.Devnet ? '?cluster=devnet' : '';
 
     return (
       <div
         style={{
           width: '100%',
-          borderRadius: 22,
-          border: '1px solid rgba(255,255,255,0.16)',
-          background: 'rgba(0,0,0,0.35)',
-          backdropFilter: 'blur(10px)',
-          padding: 18,
-          display: 'flex',
-          flexDirection: 'column',
-          gap: 14,
+          maxWidth: 980,
+          margin: '0 auto',
+          borderRadius: 16,
+          padding: 20,
+          border: '1px solid rgba(0,0,0,0.12)',
+          background: 'rgba(255,255,255,0.8)',
+          backdropFilter: 'blur(6px)',
         }}
       >
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
-          <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
-            <span style={pill}>Minted: {countMinted ?? '-'} / {countTotal ?? '-'}</span>
-            <span style={pill}>Remaining: {countRemaining ?? '-'}</span>
-            <span style={pill}>{costInSol > 0 ? `Price: ${costInSol} SOL` : 'Free mint'}</span>
-          </div>
-          <WalletMultiButtonDynamic />
-        </div>
+        <div style={{ display: 'flex', gap: 18, alignItems: 'center', flexWrap: 'wrap' }}>
+          <div style={{ flex: '1 1 320px' }}>
+            <h2 style={{ margin: 0, fontSize: 28 }}>Collectable #1</h2>
+            <p style={{ marginTop: 8, marginBottom: 12, opacity: 0.85 }}>
+              Mint your first Ishvara collectable. Later this block becomes the presale module.
+            </p>
 
-        {/* Preview */}
-        <div style={{ display: 'flex', gap: 16, flexWrap: 'wrap', alignItems: 'center' }}>
-          <div style={{ flex: '0 0 auto' }}>
+            <div style={{ display: 'flex', gap: 16, flexWrap: 'wrap', opacity: 0.85 }}>
+              <div>Minted: <b>{countMinted ?? '-'}</b> / <b>{countTotal ?? '-'}</b></div>
+              <div>Remaining: <b>{countRemaining ?? '-'}</b></div>
+              <div>Price: <b>{costInSol > 0 ? `${costInSol} SOL` : 'FREE'}</b></div>
+            </div>
+
+            <div style={{ marginTop: 14, display: 'flex', gap: 12, alignItems: 'center', flexWrap: 'wrap' }}>
+              <button
+                onClick={mintBtnHandler}
+                className={styles.mintBtn}
+                disabled={mintDisabled || loading}
+                style={{
+                  borderRadius: 12,
+                  border: 'none',
+                  padding: '14px 18px',
+                  minWidth: 220,
+                }}
+              >
+                {loading ? 'MINTING…' : 'MINT NOW'}
+              </button>
+
+              {mintCreated && (
+                <a
+                  target="_blank"
+                  rel="noreferrer"
+                  href={`https://solscan.io/token/${base58PublicKey(mintCreated)}${cluster}`}
+                  style={{
+                    textDecoration: 'none',
+                    padding: '12px 14px',
+                    borderRadius: 12,
+                    border: '1px solid rgba(0,0,0,0.15)',
+                    background: 'white',
+                    color: 'black',
+                  }}
+                >
+                  View on Solscan: <b>{shorten(base58PublicKey(mintCreated))}</b>
+                </a>
+              )}
+            </div>
+
+            {!wallet.connected && (
+              <p style={{ marginTop: 10, opacity: 0.8 }}>Connect your wallet to mint.</p>
+            )}
+          </div>
+
+          <div style={{ flex: '0 0 260px', textAlign: 'center' }}>
             <Image
               src="/preview.gif"
               alt="Preview"
-              width={260}
-              height={260}
-              style={{ borderRadius: 18, border: '1px solid rgba(255,255,255,0.12)' }}
+              width={240}
+              height={240}
               priority
+              style={{ borderRadius: 14, border: '1px solid rgba(0,0,0,0.12)' }}
             />
-          </div>
-
-          <div style={{ flex: '1 1 260px', display: 'flex', flexDirection: 'column', gap: 10 }}>
-            <div style={{ fontSize: 18, fontWeight: 800, color: 'white' }}>Collectable 1 — Ishvara Awakening</div>
-            <div style={{ color: 'rgba(255,255,255,0.85)', lineHeight: 1.5 }}>
-              Mint the first badge. Later this block becomes the presale buy module (coin purchase), without changing the page structure.
-            </div>
-
-            {!mintCreated ? (
-              <button
-                onClick={mintBtnHandler}
-                disabled={mintDisabled || loading}
-                style={{
-                  width: '100%',
-                  maxWidth: 360,
-                  padding: '14px 16px',
-                  borderRadius: 16,
-                  border: '1px solid rgba(255,255,255,0.18)',
-                  background: mintDisabled ? 'rgba(255,255,255,0.10)' : 'rgba(170, 255, 120, 0.22)',
-                  color: 'white',
-                  fontWeight: 800,
-                  cursor: mintDisabled ? 'not-allowed' : 'pointer',
-                }}
-              >
-                {loading ? 'Minting…' : `MINT ${costInSol > 0 ? `(${costInSol} SOL)` : ''}`}
-              </button>
-            ) : (
-              <a
-                href={`https://solscan.io/token/${base58PublicKey(mintCreated)}${
-                  network === WalletAdapterNetwork.Devnet ? '?cluster=devnet' : ''
-                }`}
-                target="_blank"
-                rel="noreferrer"
-                style={{
-                  display: 'inline-flex',
-                  justifyContent: 'center',
-                  padding: '12px 14px',
-                  borderRadius: 16,
-                  border: '1px solid rgba(255,255,255,0.18)',
-                  background: 'rgba(255,255,255,0.12)',
-                  color: 'white',
-                  textDecoration: 'none',
-                  fontWeight: 800,
-                  maxWidth: 520,
-                }}
-              >
-                View minted NFT on Solscan
-              </a>
-            )}
-
-            {mintCreated && (
-              <div style={{ color: 'rgba(255,255,255,0.8)', fontSize: 13 }}>
-                Mint address: <code style={{ opacity: 0.95 }}>{base58PublicKey(mintCreated)}</code>
-              </div>
-            )}
-
-            {mintMsg && (
-              <div
-                style={{
-                  borderRadius: 16,
-                  border: '1px solid rgba(255,255,255,0.16)',
-                  background: 'rgba(0,0,0,0.25)',
-                  padding: '10px 12px',
-                  color: 'rgba(255,255,255,0.9)',
-                  fontSize: 13,
-                }}
-              >
-                {mintMsg}
-              </div>
-            )}
           </div>
         </div>
       </div>
     );
   };
 
-  // shared “top nav” anchors (single page)
-  const navLink: React.CSSProperties = {
-    color: 'rgba(255,255,255,0.85)',
-    textDecoration: 'none',
-    fontSize: 14,
-    padding: '8px 10px',
-    borderRadius: 12,
-  };
-
+  /** ---------- Page layout (single long page with blocks) ---------- */
   return (
     <WalletProvider wallets={wallets} autoConnect>
       <WalletModalProvider>
         <main
+          className={styles.main}
           style={{
+            padding: '32px 16px',
             minHeight: '100vh',
             width: '100%',
-            background: 'radial-gradient(1200px 800px at 50% 0%, rgba(160,255,190,0.18), transparent 60%), #0a0a0a',
           }}
         >
-          {/* Sticky top bar */}
+          {/* Top bar */}
           <div
             style={{
-              position: 'sticky',
-              top: 0,
-              zIndex: 10,
               width: '100%',
+              maxWidth: 980,
               display: 'flex',
-              justifyContent: 'center',
-              padding: '12px 16px',
-              borderBottom: '1px solid rgba(255,255,255,0.08)',
-              background: 'rgba(0,0,0,0.45)',
-              backdropFilter: 'blur(10px)',
+              justifyContent: 'space-between',
+              alignItems: 'center',
+              gap: 12,
+              flexWrap: 'wrap',
+              margin: '0 auto 18px',
             }}
           >
-            <div
-              style={{
-                width: '100%',
-                maxWidth: 980,
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'space-between',
-                gap: 12,
-                flexWrap: 'wrap',
-              }}
-            >
-              <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                <div
-                  style={{
-                    width: 36,
-                    height: 36,
-                    borderRadius: 12,
-                    background: 'rgba(255,255,255,0.12)',
-                    display: 'grid',
-                    placeItems: 'center',
-                    fontWeight: 900,
-                    color: 'white',
-                  }}
-                >
-                  I
-                </div>
-                <div style={{ color: 'white', fontWeight: 900, letterSpacing: 0.3 }}>ISHVARA</div>
-              </div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+              <Image src="/favicon.ico" alt="Ishvara" width={24} height={24} />
+              <b>Ishvara</b>
+            </div>
 
-              <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
-                <a style={navLink} href="#vision">Vision</a>
-                <a style={navLink} href="#mint">Mint</a>
-                <a style={navLink} href="#whitepaper">Whitepaper</a>
-                <a style={navLink} href="#community">Community</a>
-              </div>
+            <div style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}>
+              <a href="#mint" style={{ textDecoration: 'none' }}>Mint</a>
+              <a href="#about" style={{ textDecoration: 'none' }}>About</a>
+              <a href="#updates" style={{ textDecoration: 'none' }}>Updates</a>
+              <WalletMultiButtonDynamic />
             </div>
           </div>
 
           {/* HERO */}
-          <Section
-            id="top"
+          <section
             style={{
+              width: '100%',
+              maxWidth: 980,
+              margin: '0 auto',
+              borderRadius: 18,
+              padding: 24,
+              border: '1px solid rgba(0,0,0,0.12)',
               background:
-                'linear-gradient(180deg, rgba(255,255,255,0.02), transparent 60%), radial-gradient(900px 700px at 10% 20%, rgba(140,120,255,0.18), transparent 55%)',
+                'linear-gradient(135deg, rgba(0,0,0,0.65), rgba(0,0,0,0.15))',
+              color: 'white',
+              position: 'relative',
+              overflow: 'hidden',
             }}
           >
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
-              <div style={{ color: 'rgba(255,255,255,0.75)', fontSize: 14 }}>
-                Something is shifting.
-              </div>
-              <h1 style={{ margin: 0, color: 'white', fontSize: 'clamp(32px, 6vw, 56px)', lineHeight: 1.05 }}>
-                Ishvara Awakening
-              </h1>
-              <div style={{ color: 'rgba(255,255,255,0.85)', fontSize: 16, maxWidth: 720, lineHeight: 1.6 }}>
-                Collectables you can mint now — and later the same block becomes the presale buy module (coin purchase), without rebuilding your site structure.
-              </div>
+            {/* If you later want your OWN photo background: put it in /public and set it here */}
+            <div
+              aria-hidden
+              style={{
+                position: 'absolute',
+                inset: 0,
+                backgroundImage: `url("/hero-bg.jpg")`,
+                backgroundSize: 'cover',
+                backgroundPosition: 'center',
+                opacity: 0.25,
+              }}
+            />
+            <div style={{ position: 'relative' }}>
+              <h1 style={{ margin: 0, fontSize: 42, lineHeight: 1.1 }}>Something is shifting.</h1>
+              <p style={{ marginTop: 10, maxWidth: 680, opacity: 0.9 }}>
+                Ishvara is an evolving collection + future token ecosystem.
+                Start with Collectable #1.
+              </p>
 
-              <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', marginTop: 6 }}>
+              <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', marginTop: 14 }}>
                 <a
                   href="#mint"
                   style={{
-                    padding: '12px 16px',
-                    borderRadius: 16,
-                    border: '1px solid rgba(255,255,255,0.18)',
-                    background: 'rgba(255,255,255,0.12)',
-                    color: 'white',
-                    fontWeight: 800,
                     textDecoration: 'none',
+                    background: 'white',
+                    color: 'black',
+                    padding: '10px 14px',
+                    borderRadius: 12,
+                    fontWeight: 700,
                   }}
                 >
-                  Enter Mint
+                  Go to Mint
                 </a>
                 <a
-                  href="#whitepaper"
+                  href="#updates"
                   style={{
-                    padding: '12px 16px',
-                    borderRadius: 16,
-                    border: '1px solid rgba(255,255,255,0.18)',
-                    background: 'rgba(0,0,0,0.15)',
-                    color: 'white',
-                    fontWeight: 700,
                     textDecoration: 'none',
+                    border: '1px solid rgba(255,255,255,0.5)',
+                    color: 'white',
+                    padding: '10px 14px',
+                    borderRadius: 12,
+                    fontWeight: 700,
                   }}
                 >
-                  Read the Whitepaper
+                  Get Updates
                 </a>
               </div>
 
-              <div style={{ marginTop: 8 }}>
-                <SocialRow />
+              <div style={{ display: 'flex', gap: 14, marginTop: 14, opacity: 0.9, flexWrap: 'wrap' }}>
+                <a href="#" style={{ color: 'white', textDecoration: 'none' }}>X</a>
+                <a href="#" style={{ color: 'white', textDecoration: 'none' }}>Telegram</a>
+                <a href="#" style={{ color: 'white', textDecoration: 'none' }}>Discord</a>
               </div>
             </div>
-          </Section>
+          </section>
 
-          {/* VISION */}
-          <Section
-            id="vision"
-            style={{
-              background:
-                'radial-gradient(900px 700px at 80% 30%, rgba(120,255,190,0.14), transparent 60%)',
-            }}
-          >
-            <h2 style={{ margin: 0, color: 'white', fontSize: 28 }}>Vision</h2>
-            <div style={{ color: 'rgba(255,255,255,0.85)', lineHeight: 1.7 }}>
-              Ishvara starts with Collectable 1 (Awakening). This page stays minimal. As the project matures, we add
-              presale, staking, and other modules — still on this same single-page structure.
-            </div>
-          </Section>
-
-          {/* MINT / BUY BLOCK */}
-          <Section
+          {/* MINT BLOCK */}
+          <section
             id="mint"
             style={{
-              background:
-                'linear-gradient(180deg, rgba(255,255,255,0.02), transparent 70%), radial-gradient(900px 700px at 30% 30%, rgba(255,200,120,0.12), transparent 55%)',
+              width: '100%',
+              marginTop: 18,
+              padding: 0,
             }}
           >
-            <h2 style={{ margin: 0, color: 'white', fontSize: 28 }}>Mint / Buy</h2>
-            <div style={{ color: 'rgba(255,255,255,0.75)', lineHeight: 1.7, marginBottom: 4 }}>
-              This is the only “action block”. Today: mint NFT. Later: presale buy (coin).
-            </div>
             <MintBlock />
-          </Section>
+          </section>
 
-          {/* WHITEPAPER */}
-          <Section
-            id="whitepaper"
+          {/* ABOUT / WHITEPAPER PLACEHOLDER */}
+          <section
+            id="about"
             style={{
-              background:
-                'radial-gradient(900px 700px at 50% 30%, rgba(120,170,255,0.14), transparent 60%)',
+              width: '100%',
+              maxWidth: 980,
+              margin: '18px auto 0',
+              borderRadius: 18,
+              padding: 24,
+              border: '1px solid rgba(0,0,0,0.12)',
+              background: 'linear-gradient(135deg, rgba(250,250,250,1), rgba(235,235,235,1))',
             }}
           >
-            <h2 style={{ margin: 0, color: 'white', fontSize: 28 }}>Whitepaper</h2>
-            <div style={{ color: 'rgba(255,255,255,0.85)', lineHeight: 1.7 }}>
-              Later you can host a PDF in <code>/public</code> or on IPFS and link it here.
-            </div>
-            <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
-              <a
-                href="#"
+            <h2 style={{ marginTop: 0 }}>About</h2>
+            <p style={{ marginBottom: 0, opacity: 0.85 }}>
+              This block is where you’ll later place your whitepaper / lore / roadmap.
+              (We can add a downloadable PDF, sections, and anchors.)
+            </p>
+          </section>
+
+          {/* UPDATES / EMAIL CAPTURE */}
+          <section
+            id="updates"
+            style={{
+              width: '100%',
+              maxWidth: 980,
+              margin: '18px auto 0',
+              borderRadius: 18,
+              padding: 24,
+              border: '1px solid rgba(0,0,0,0.12)',
+              background: 'linear-gradient(135deg, rgba(20,20,20,1), rgba(60,60,60,1))',
+              color: 'white',
+            }}
+          >
+            <h2 style={{ marginTop: 0 }}>Get updates</h2>
+            <p style={{ opacity: 0.9 }}>
+              Leave your email to get notified about new collectables and the future presale.
+            </p>
+
+            <form
+              onSubmit={(e) => {
+                e.preventDefault();
+                setMintMsg('Email capture is placeholder for now (we can connect Formspree / Buttondown / Mailchimp).');
+              }}
+              style={{
+                display: 'flex',
+                gap: 10,
+                flexWrap: 'wrap',
+                marginTop: 12,
+              }}
+            >
+              <input
+                type="email"
+                required
+                placeholder="you@proton.me"
                 style={{
-                  padding: '12px 16px',
-                  borderRadius: 16,
-                  border: '1px solid rgba(255,255,255,0.18)',
-                  background: 'rgba(255,255,255,0.10)',
-                  color: 'white',
+                  flex: '1 1 260px',
+                  padding: '12px 14px',
+                  borderRadius: 12,
+                  border: 'none',
+                  outline: 'none',
+                }}
+              />
+              <button
+                type="submit"
+                style={{
+                  padding: '12px 14px',
+                  borderRadius: 12,
+                  border: 'none',
                   fontWeight: 800,
-                  textDecoration: 'none',
+                  cursor: 'pointer',
                 }}
               >
-                Download (placeholder)
-              </a>
-            </div>
-          </Section>
+                Notify me
+              </button>
+            </form>
 
-          {/* COMMUNITY */}
-          <Section
-            id="community"
-            style={{
-              background:
-                'linear-gradient(180deg, rgba(255,255,255,0.02), transparent 70%), radial-gradient(900px 700px at 70% 40%, rgba(180,120,255,0.16), transparent 55%)',
-            }}
-          >
-            <h2 style={{ margin: 0, color: 'white', fontSize: 28 }}>Community</h2>
-            <div style={{ color: 'rgba(255,255,255,0.85)', lineHeight: 1.7 }}>
-              Follow and stay updated. If you want, leave an email (optional).
+            <div style={{ display: 'flex', gap: 14, marginTop: 14, opacity: 0.9, flexWrap: 'wrap' }}>
+              <a href="#" style={{ color: 'white', textDecoration: 'none' }}>X</a>
+              <a href="#" style={{ color: 'white', textDecoration: 'none' }}>Telegram</a>
+              <a href="#" style={{ color: 'white', textDecoration: 'none' }}>Discord</a>
+              <a href="#" style={{ color: 'white', textDecoration: 'none' }}>Email</a>
             </div>
-            <SocialRow />
-            <EmailCapture />
+          </section>
 
-            <div style={{ marginTop: 10, color: 'rgba(255,255,255,0.55)', fontSize: 12 }}>
-              Network: {process.env.NEXT_PUBLIC_NETWORK || 'mainnet'} • This site does not store wallet identities on a server.
+          {/* Toast / message */}
+          {mintMsg && (
+            <div
+              className={styles.mintMsg}
+              style={{
+                position: 'fixed',
+                bottom: 18,
+                left: '50%',
+                transform: 'translateX(-50%)',
+                width: 'min(920px, calc(100% - 24px))',
+                background: 'white',
+                borderRadius: 14,
+                border: '1px solid rgba(0,0,0,0.15)',
+                padding: 14,
+                boxShadow: '0 8px 30px rgba(0,0,0,0.15)',
+                zIndex: 50,
+              }}
+            >
+              <button
+                className={styles.mintMsgClose}
+                onClick={() => setMintMsg(undefined)}
+                style={{
+                  float: 'right',
+                  borderRadius: 10,
+                  padding: '4px 10px',
+                  border: 'none',
+                  backgroundColor: '#eee',
+                  cursor: 'pointer',
+                }}
+              >
+                ×
+              </button>
+              <span style={{ display: 'block', paddingRight: 30 }}>{mintMsg}</span>
             </div>
-          </Section>
-
-          {/* footer */}
-          <div style={{ padding: '28px 16px', display: 'flex', justifyContent: 'center' }}>
-            <div style={{ width: '100%', maxWidth: 980, color: 'rgba(255,255,255,0.45)', fontSize: 12 }}>
-              © {new Date().getFullYear()} Ishvara — single page build.
-            </div>
-          </div>
+          )}
         </main>
       </WalletModalProvider>
     </WalletProvider>
