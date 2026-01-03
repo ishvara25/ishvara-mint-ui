@@ -2,7 +2,8 @@
 
 import Image from 'next/image';
 import dynamic from 'next/dynamic';
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
+
 import styles from './page.module.css';
 
 import { WalletAdapterNetwork } from '@solana/wallet-adapter-base';
@@ -24,7 +25,7 @@ import {
   transactionBuilder,
   unwrapSome,
   type Option,
-  type PublicKey,
+  type PublicKey as UmiPublicKey,
   type SolAmount,
   type Umi,
 } from '@metaplex-foundation/umi';
@@ -51,18 +52,18 @@ const WalletMultiButtonDynamic = dynamic(
 );
 
 function getNetwork(): WalletAdapterNetwork {
-  const n = (process.env.NEXT_PUBLIC_NETWORK || '').toLowerCase().trim();
+  const n = (process.env.NEXT_PUBLIC_NETWORK || 'mainnet-beta').toLowerCase().trim();
   if (n === 'devnet') return WalletAdapterNetwork.Devnet;
   if (n === 'testnet') return WalletAdapterNetwork.Testnet;
-  // accept: mainnet, mainnet-beta, mainnetbeta
   return WalletAdapterNetwork.Mainnet;
 }
 
 function getEndpoint(): string {
+  // In Vercel: zet NEXT_PUBLIC_RPC_URL als volledige URL: https://.......
   const rpc = (process.env.NEXT_PUBLIC_RPC_URL || '').trim();
-  // Must be a full URL. If you stored only host, fix it in env.
-  if (rpc.startsWith('http://') || rpc.startsWith('https://')) return rpc;
+  if (rpc && (rpc.startsWith('https://') || rpc.startsWith('http://'))) return rpc;
 
+  // fallback
   const network = getNetwork();
   if (network === WalletAdapterNetwork.Devnet) return 'https://api.devnet.solana.com';
   if (network === WalletAdapterNetwork.Testnet) return 'https://api.testnet.solana.com';
@@ -70,8 +71,10 @@ function getEndpoint(): string {
 }
 
 function getCandyMachineId(): string | null {
-  const id = (process.env.NEXT_PUBLIC_CANDY_MACHINE_ID || '').trim();
-  return id.length ? id : null;
+  const raw = process.env.NEXT_PUBLIC_CANDY_MACHINE_ID;
+  if (!raw) return null;
+  // strip whitespace + quotes
+  return raw.trim().replace(/^["']|["']$/g, '');
 }
 
 export default function Home() {
@@ -87,37 +90,39 @@ export default function Home() {
     [network]
   );
 
-  // Base UMI (identity injected later after wallet connect)
-  const [umi] = useState<Umi>(() => createUmi(endpoint).use(mplTokenMetadata()).use(mplCandyMachine()));
+  // Base umi (zonder wallet identity)
+  const umiBase: Umi = useMemo(() => {
+    return createUmi(endpoint).use(mplTokenMetadata()).use(mplCandyMachine());
+  }, [endpoint]);
 
   // State
   const [loading, setLoading] = useState(false);
-  const [mintCreated, setMintCreated] = useState<PublicKey | null>(null);
+  const [mintCreated, setMintCreated] = useState<UmiPublicKey | null>(null);
   const [mintMsg, setMintMsg] = useState<string | undefined>(undefined);
 
   const [cm, setCm] = useState<CandyMachine | null>(null);
   const [guard, setGuard] = useState<CandyGuard<DefaultGuardSet> | null>(null);
 
-  const [countTotal, setCountTotal] = useState<number | null>(null);
-  const [countMinted, setCountMinted] = useState<number | null>(null);
-  const [countRemaining, setCountRemaining] = useState<number | null>(null);
+  const [countTotal, setCountTotal] = useState<number>(0);
+  const [countMinted, setCountMinted] = useState<number>(0);
+  const [countRemaining, setCountRemaining] = useState<number>(0);
 
   const [costInSol, setCostInSol] = useState<number>(0);
   const [mintDisabled, setMintDisabled] = useState<boolean>(true);
 
-  // Load CM + Guard + counts + cost (solPayment)
-  const retrieveAvailability = async () => {
+  // Load CM + Guard + counts + cost
+  const retrieveAvailability = useCallback(async () => {
     try {
       setMintMsg(undefined);
 
       const cmIdStr = getCandyMachineId();
       if (!cmIdStr) {
-        setMintMsg('Missing NEXT_PUBLIC_CANDY_MACHINE_ID in your environment variables.');
+        setMintMsg('No candy machine ID found. Set NEXT_PUBLIC_CANDY_MACHINE_ID.');
         setMintDisabled(true);
         return;
       }
 
-      let cmPk: ReturnType<typeof publicKey>;
+      let cmPk: UmiPublicKey;
       try {
         cmPk = publicKey(cmIdStr);
       } catch {
@@ -126,7 +131,7 @@ export default function Home() {
         return;
       }
 
-      const candyMachine = await fetchCandyMachine(umi, cmPk);
+      const candyMachine = await fetchCandyMachine(umiBase, cmPk);
       setCm(candyMachine);
 
       const total = candyMachine.itemsLoaded;
@@ -137,53 +142,54 @@ export default function Home() {
       setCountMinted(minted);
       setCountRemaining(remaining);
 
-      const cg = await safeFetchCandyGuard(umi, candyMachine.mintAuthority);
+      // Guard ophalen
+      const cg = await safeFetchCandyGuard(umiBase, candyMachine.mintAuthority);
       setGuard(cg ?? null);
 
-      // Cost from solPayment (if present)
+      // Cost uit solPayment (als aanwezig)
+      let solCost = 0;
       const defaultGuards: DefaultGuardSet | undefined = cg?.guards;
       const solPaymentGuard: Option<SolPayment> | undefined = defaultGuards?.solPayment;
 
       if (solPaymentGuard) {
         const solPayment = unwrapSome(solPaymentGuard);
-        const lamports: SolAmount = solPayment.lamports;
-        setCostInSol(Number(lamports.basisPoints) / 1_000_000_000);
-      } else {
-        setCostInSol(0);
+        if (solPayment) {
+          const lamports: SolAmount = solPayment.lamports;
+          solCost = Number(lamports.basisPoints) / 1_000_000_000;
+        }
       }
 
+      setCostInSol(solCost);
       setMintDisabled(!(remaining > 0));
     } catch (e: any) {
       console.error(e);
-      setMintMsg(`Could not load Candy Machine. Check RPC/network. Details: ${e?.message || String(e)}`);
+      setMintMsg(`Could not fetch candy machine. Details: ${e?.message || String(e)}`);
       setMintDisabled(true);
     }
-  };
+  }, [umiBase]);
 
   useEffect(() => {
     retrieveAvailability();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [mintCreated]);
+  }, [retrieveAvailability, mintCreated]);
 
   const Mint = () => {
     const wallet = useWallet();
 
-    // Inject wallet identity into umi after connect
-    useEffect(() => {
-      if (wallet.connected) {
-        umi.use(walletAdapterIdentity(wallet));
-      }
-      // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [wallet.connected]);
+    // umi mét wallet identity (alleen als wallet connected)
+    const umi = useMemo(() => {
+      return umiBase.use(walletAdapterIdentity(wallet));
+    }, [umiBase, wallet]);
 
-    // Check balance (only after connect, and only if price > 0)
+    // check balance zodra wallet connected en prijs bekend
     useEffect(() => {
+      let cancelled = false;
+
       const run = async () => {
         if (!wallet.connected) return;
 
-        // Free mint: only require remaining > 0
+        // Free mint of 0: alleen remaining check
         if (costInSol <= 0) {
-          setMintDisabled(!(countRemaining !== null && countRemaining > 0));
+          if (!cancelled) setMintDisabled(!(countRemaining > 0));
           return;
         }
 
@@ -191,21 +197,25 @@ export default function Home() {
           const balance: SolAmount = await umi.rpc.getBalance(umi.identity.publicKey);
           const sol = Number(balance.basisPoints) / 1_000_000_000;
 
+          if (cancelled) return;
+
           if (sol < costInSol) {
-            setMintMsg('Not enough SOL in this wallet for the mint + fees.');
+            setMintMsg('Add more SOL to your wallet.');
             setMintDisabled(true);
           } else {
-            setMintDisabled(!(countRemaining !== null && countRemaining > 0));
+            setMintDisabled(!(countRemaining > 0));
           }
         } catch (e: any) {
           console.error(e);
-          setMintMsg(`Could not read wallet balance: ${e?.message || String(e)}`);
+          if (!cancelled) setMintMsg(`Could not read wallet balance: ${e?.message || String(e)}`);
         }
       };
 
       run();
-      // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [wallet.connected, costInSol, countRemaining]);
+      return () => {
+        cancelled = true;
+      };
+    }, [wallet.connected, umi, costInSol, countRemaining]);
 
     const mintBtnHandler = async () => {
       if (!wallet.connected) {
@@ -213,7 +223,7 @@ export default function Home() {
         return;
       }
       if (!cm) {
-        setMintMsg('Candy Machine not loaded yet. Refresh the page.');
+        setMintMsg('Candy Machine not loaded. Refresh the page.');
         return;
       }
 
@@ -221,16 +231,15 @@ export default function Home() {
       setMintMsg(undefined);
 
       try {
-        // Build mintArgs (only add what your guards require)
         const mintArgs: Partial<DefaultGuardSetMintArgs> = {};
 
-        // If solPayment guard is active, it often expects destination in mintArgs
-        if (guard) {
-          const defaultGuards: DefaultGuardSet | undefined = guard.guards;
-          const solPaymentGuard: Option<SolPayment> | undefined = defaultGuards?.solPayment;
+        // Als er solPayment guard is, moet destination mee in mintArgs
+        const defaultGuards: DefaultGuardSet | undefined = guard?.guards;
+        const solPaymentGuard: Option<SolPayment> | undefined = defaultGuards?.solPayment;
 
-          if (solPaymentGuard) {
-            const solPayment = unwrapSome(solPaymentGuard);
+        if (solPaymentGuard) {
+          const solPayment = unwrapSome(solPaymentGuard);
+          if (solPayment) {
             mintArgs.solPayment = some({
               destination: solPayment.destination,
             });
@@ -247,20 +256,19 @@ export default function Home() {
               collectionMint: cm.collectionMint,
               collectionUpdateAuthority: cm.authority,
               nftMint: nftSigner,
-              candyGuard: guard?.publicKey,
+              candyGuard: guard?.publicKey, // ok als undefined
               mintArgs,
-              tokenStandard: TokenStandard.NonFungible, // safe default for most CMv3 drops
+              tokenStandard: TokenStandard.ProgrammableNonFungible,
             })
           );
 
-        const { signature } = await tx.sendAndConfirm(umi, {
+        await tx.sendAndConfirm(umi, {
           confirm: { commitment: 'finalized' },
           send: { skipPreflight: false },
         });
 
-        console.log('Mint signature:', signature);
         setMintCreated(nftSigner.publicKey);
-        setMintMsg('Your Ishvara has awakened.');
+        setMintMsg('Mint was successful!');
       } catch (err: any) {
         console.error(err);
         setMintMsg(err?.message || String(err));
@@ -269,9 +277,7 @@ export default function Home() {
       }
     };
 
-    if (!wallet.connected) {
-      return <p className={styles.connectHint}>Connect your wallet to awaken your Ishvara.</p>;
-    }
+    if (!wallet.connected) return <p>Please connect your wallet.</p>;
 
     if (mintCreated) {
       const cluster = network === WalletAdapterNetwork.Devnet ? '?cluster=devnet' : '';
@@ -282,7 +288,14 @@ export default function Home() {
           rel="noreferrer"
           href={`https://solscan.io/token/${base58PublicKey(mintCreated)}${cluster}`}
         >
-          <Image className={styles.logo} src="/nftHolder.png" alt="Minted NFT" width={300} height={300} priority />
+          <Image
+            className={styles.logo}
+            src="/nftHolder.png"
+            alt="Minted NFT"
+            width={300}
+            height={300}
+            priority
+          />
           <p className="mintAddress">
             <code>{base58PublicKey(mintCreated)}</code>
           </p>
@@ -292,12 +305,15 @@ export default function Home() {
 
     return (
       <>
-        <button onClick={mintBtnHandler} className={styles.mintBtn} disabled={mintDisabled || loading}>
-          Awaken
+        <button
+          onClick={mintBtnHandler}
+          className={styles.mintBtn}
+          disabled={mintDisabled || loading}
+        >
+          MINT
           <br />
           {costInSol > 0 ? `(${costInSol} SOL)` : '(FREE)'}
         </button>
-
         {loading && <div className={styles.loadingDots}>. . .</div>}
       </>
     );
@@ -309,21 +325,32 @@ export default function Home() {
         <main className={styles.main}>
           <WalletMultiButtonDynamic />
 
-          <h1 className={styles.title}>Ishvara — Awakening</h1>
-          <p className={styles.subtitle}>A limited digital awakening on Solana.</p>
+          <h1>Mint UI (CMv3)</h1>
 
-          <Image className={styles.logo} src="/preview.gif" alt="Preview of the collection" width={300} height={300} priority />
+          <Image
+            className={styles.logo}
+            src="/preview.gif"
+            alt="Preview of NFTs"
+            width={300}
+            height={300}
+            priority
+          />
 
           <div className={styles.countsContainer}>
-            <div>{countMinted ?? 0} awakened</div>
-            <div>{countRemaining ?? '-'} remaining</div>
+            <div>
+              Minted: {countMinted} / {countTotal}
+            </div>
+            <div>Remaining: {countRemaining}</div>
           </div>
 
           <Mint />
 
           {mintMsg && (
             <div className={styles.mintMsg}>
-              <button className={styles.mintMsgClose} onClick={() => setMintMsg(undefined)}>
+              <button
+                className={styles.mintMsgClose}
+                onClick={() => setMintMsg(undefined)}
+              >
                 &times;
               </button>
               <span>{mintMsg}</span>
