@@ -199,6 +199,44 @@ function EmailCapture() {
   );
 }
 
+/** FAQ block (UI-only) */
+function FAQ() {
+  const card: React.CSSProperties = {
+    borderRadius: 18,
+    border: '1px solid rgba(255,255,255,0.16)',
+    background: 'rgba(0,0,0,0.35)',
+    backdropFilter: 'blur(10px)',
+    padding: 16,
+    display: 'flex',
+    flexDirection: 'column',
+    gap: 8,
+  };
+
+  const q: React.CSSProperties = { color: 'white', fontWeight: 900 };
+  const a: React.CSSProperties = { color: 'rgba(255,255,255,0.85)', lineHeight: 1.6 };
+
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+      <div style={card}>
+        <div style={q}>What is Collectable 1?</div>
+        <div style={a}>The first Ishvara badge. A symbolic entry point into the ecosystem.</div>
+      </div>
+      <div style={card}>
+        <div style={q}>Is this on mainnet?</div>
+        <div style={a}>Yes, depending on your environment settings (Network + RPC) configured in Vercel.</div>
+      </div>
+      <div style={card}>
+        <div style={q}>Do you store my wallet address?</div>
+        <div style={a}>No. This page does not store wallet identities on a server.</div>
+      </div>
+      <div style={card}>
+        <div style={q}>What happens after mint?</div>
+        <div style={a}>You can view the minted NFT on Solscan via the link shown after a successful mint.</div>
+      </div>
+    </div>
+  );
+}
+
 export default function Page() {
   const network = getNetwork();
   const endpoint = getEndpoint();
@@ -511,17 +549,19 @@ export default function Page() {
     borderRadius: 12,
   };
 
+  // Helper: consistent background style per block
+  const bg = (n: string): React.CSSProperties => ({
+    backgroundImage: `linear-gradient(180deg, rgba(0,0,0,0.55), rgba(0,0,0,0.35)), url('/bckgrnd_ISHVARA_${n}.png')`,
+    backgroundSize: 'cover',
+    backgroundPosition: 'center',
+    backgroundRepeat: 'no-repeat',
+  });
+
   return (
     <WalletProvider wallets={wallets} autoConnect>
       <WalletModalProvider>
-        <main
-          style={{
-            minHeight: '100vh',
-            width: '100%',
-            background:
-              'radial-gradient(1200px 800px at 50% 0%, rgba(160,255,190,0.18), transparent 60%), #0a0a0a',
-          }}
-        >
+        <main style={{ minHeight: '100vh', width: '100%', background: '#0a0a0a' }}>
+          {/* Sticky top nav */}
           <div
             style={{
               position: 'sticky',
@@ -565,22 +605,19 @@ export default function Page() {
                 <div style={{ color: 'white', fontWeight: 900, letterSpacing: 0.3 }}>ISHVARA</div>
               </div>
 
+              {/* ✅ Updated order + FAQ link */}
               <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
-                <a style={navLink} href="#vision">Vision</a>
                 <a style={navLink} href="#mint">Mint</a>
+                <a style={navLink} href="#vision">Vision</a>
                 <a style={navLink} href="#whitepaper">Whitepaper</a>
                 <a style={navLink} href="#community">Community</a>
+                <a style={navLink} href="#faq">FAQ</a>
               </div>
             </div>
           </div>
 
-          <Section
-            id="top"
-            style={{
-              background:
-                'linear-gradient(180deg, rgba(255,255,255,0.02), transparent 60%), radial-gradient(900px 700px at 10% 20%, rgba(140,120,255,0.18), transparent 55%)',
-            }}
-          >
+          {/* Block 1: Hero / Awakening */}
+          <Section id="top" style={bg('01')}>
             <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
               <div style={{ color: 'rgba(255,255,255,0.75)', fontSize: 14 }}>Something is shifting.</div>
               <h1 style={{ margin: 0, color: 'white', fontSize: 'clamp(32px, 6vw, 56px)', lineHeight: 1.05 }}>
@@ -628,26 +665,8 @@ export default function Page() {
             </div>
           </Section>
 
-          <Section
-            id="vision"
-            style={{
-              background: 'radial-gradient(900px 700px at 80% 30%, rgba(120,255,190,0.14), transparent 60%)',
-            }}
-          >
-            <h2 style={{ margin: 0, color: 'white', fontSize: 28 }}>Vision</h2>
-            <div style={{ color: 'rgba(255,255,255,0.85)', lineHeight: 1.7 }}>
-              Ishvara starts with Collectable 1 (Awakening). This page stays minimal. As the project matures, we add
-              presale, staking, and other modules — still on this same single-page structure.
-            </div>
-          </Section>
-
-          <Section
-            id="mint"
-            style={{
-              background:
-                'linear-gradient(180deg, rgba(255,255,255,0.02), transparent 70%), radial-gradient(900px 700px at 30% 30%, rgba(255,200,120,0.12), transparent 55%)',
-            }}
-          >
+          {/* ✅ Block 2: Mint (moved directly after Awakening) */}
+          <Section id="mint" style={bg('02')}>
             <h2 style={{ margin: 0, color: 'white', fontSize: 28 }}>Mint / Buy</h2>
             <div style={{ color: 'rgba(255,255,255,0.75)', lineHeight: 1.7, marginBottom: 4 }}>
               This is the only “action block”. Today: mint NFT. Later: presale buy (coin).
@@ -655,12 +674,17 @@ export default function Page() {
             <MintBlock />
           </Section>
 
-          <Section
-            id="whitepaper"
-            style={{
-              background: 'radial-gradient(900px 700px at 50% 30%, rgba(120,170,255,0.14), transparent 60%)',
-            }}
-          >
+          {/* Block 3: Vision */}
+          <Section id="vision" style={bg('03')}>
+            <h2 style={{ margin: 0, color: 'white', fontSize: 28 }}>Vision</h2>
+            <div style={{ color: 'rgba(255,255,255,0.85)', lineHeight: 1.7 }}>
+              Ishvara starts with Collectable 1 (Awakening). This page stays minimal. As the project matures, we add
+              presale, staking, and other modules — still on this same single-page structure.
+            </div>
+          </Section>
+
+          {/* Block 4: Whitepaper */}
+          <Section id="whitepaper" style={bg('04')}>
             <h2 style={{ margin: 0, color: 'white', fontSize: 28 }}>Whitepaper</h2>
             <div style={{ color: 'rgba(255,255,255,0.85)', lineHeight: 1.7 }}>
               Later you can host a PDF in <code>/public</code> or on IPFS and link it here.
@@ -683,13 +707,8 @@ export default function Page() {
             </div>
           </Section>
 
-          <Section
-            id="community"
-            style={{
-              background:
-                'linear-gradient(180deg, rgba(255,255,255,0.02), transparent 70%), radial-gradient(900px 700px at 70% 40%, rgba(180,120,255,0.16), transparent 55%)',
-            }}
-          >
+          {/* Block 5: Community */}
+          <Section id="community" style={bg('05')}>
             <h2 style={{ margin: 0, color: 'white', fontSize: 28 }}>Community</h2>
             <div style={{ color: 'rgba(255,255,255,0.85)', lineHeight: 1.7 }}>
               Follow and stay updated. If you want, leave an email (optional).
@@ -701,6 +720,12 @@ export default function Page() {
               Network: {process.env.NEXT_PUBLIC_NETWORK || 'mainnet'} • This site does not store wallet identities on a
               server.
             </div>
+          </Section>
+
+          {/* ✅ Block 6: FAQ (new last block) */}
+          <Section id="faq" style={bg('06')}>
+            <h2 style={{ margin: 0, color: 'white', fontSize: 28 }}>FAQ</h2>
+            <FAQ />
           </Section>
 
           <div style={{ padding: '28px 16px', display: 'flex', justifyContent: 'center' }}>
