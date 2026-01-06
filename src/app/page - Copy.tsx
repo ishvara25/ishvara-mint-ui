@@ -549,18 +549,11 @@ export default function Page() {
     borderRadius: 12,
   };
 
-  // Helper: consistent background style per block (UPDATED: no crop, scales with block height)
+  // Helper: consistent background style per block
   const bg = (n: string): React.CSSProperties => ({
-    backgroundImage: `
-      linear-gradient(
-        to bottom,
-        rgba(0,0,0,0.25),
-        rgba(0,0,0,0.45)
-      ),
-      url('/bckgrnd_ISHVARA_${n}.png')
-    `,
-    backgroundSize: '100% auto',
-    backgroundPosition: 'center center',
+    backgroundImage: `linear-gradient(180deg, rgba(0,0,0,0.55), rgba(0,0,0,0.35)), url('/bckgrnd_ISHVARA_${n}.png')`,
+    backgroundSize: 'cover',
+    backgroundPosition: 'center',
     backgroundRepeat: 'no-repeat',
   });
 
