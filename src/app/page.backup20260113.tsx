@@ -2,7 +2,7 @@
 
 import dynamic from 'next/dynamic';
 import Image from 'next/image';
-import { useEffect, useMemo, useState, type ReactNode } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 
 import { WalletAdapterNetwork } from '@solana/wallet-adapter-base';
 import { WalletProvider, useWallet } from '@solana/wallet-adapter-react';
@@ -76,30 +76,22 @@ function Section({
   id,
   children,
   style,
-  layers,
 }: {
   id: string;
-  children: ReactNode;
+  children: React.ReactNode;
   style?: React.CSSProperties;
-  layers?: ReactNode; // ✅ full-bleed layers (bg/fg) rendered behind content
 }) {
   return (
     <section
       id={id}
       style={{
-        position: 'relative',
         width: '100%',
         display: 'flex',
         justifyContent: 'center',
         padding: '72px 16px',
-        overflow: 'hidden',
         ...style,
       }}
     >
-      {/* ✅ Full width layers go here */}
-      {layers}
-
-      {/* ✅ Content always above layers */}
       <div
         style={{
           width: '100%',
@@ -107,8 +99,6 @@ function Section({
           display: 'flex',
           flexDirection: 'column',
           gap: 20,
-          position: 'relative',
-          zIndex: 5,
         }}
       >
         {children}
@@ -306,6 +296,7 @@ export default function Page() {
       const cg = await safeFetchCandyGuard(umi, candyMachine.mintAuthority);
       setGuard(cg ?? null);
 
+      // ✅ FIX: strict-safe parsing of solPayment guard
       const defaultGuards: DefaultGuardSet | undefined = cg?.guards;
       const solPaymentGuard: Option<SolPayment> | undefined = defaultGuards?.solPayment;
 
@@ -454,9 +445,7 @@ export default function Page() {
           }}
         >
           <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
-            <span style={pill}>
-              Minted: {countMinted ?? '-'} / {countTotal ?? '-'}
-            </span>
+            <span style={pill}>Minted: {countMinted ?? '-'} / {countTotal ?? '-'}</span>
             <span style={pill}>Remaining: {countRemaining ?? '-'}</span>
             <span style={pill}>{costInSol > 0 ? `Price: ${costInSol} SOL` : 'Free mint'}</span>
           </div>
@@ -560,10 +549,14 @@ export default function Page() {
     borderRadius: 12,
   };
 
-  // Background helper for blocks 02..06 (as before)
+  // Helper: consistent background style per block (UPDATED: no crop, scales with block height)
   const bg = (n: string): React.CSSProperties => ({
     backgroundImage: `
-      linear-gradient(to bottom, rgba(0,0,0,0.25), rgba(0,0,0,0.45)),
+      linear-gradient(
+        to bottom,
+        rgba(0,0,0,0.25),
+        rgba(0,0,0,0.45)
+      ),
       url('/bckgrnd_ISHVARA_${n}.png')
     `,
     backgroundSize: '100% auto',
@@ -619,6 +612,7 @@ export default function Page() {
                 <div style={{ color: 'white', fontWeight: 900, letterSpacing: 0.3 }}>ISHVARA</div>
               </div>
 
+              {/* ✅ Updated order + FAQ link */}
               <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
                 <a style={navLink} href="#mint">Mint</a>
                 <a style={navLink} href="#vision">Vision</a>
@@ -629,57 +623,17 @@ export default function Page() {
             </div>
           </div>
 
-          {/* Block 1: Hero / Awakening + Foreground overlay */}
-          <Section
-            id="top"
-            style={{ background: '#0a0a0a' }}
-            layers={
-              <>
-                {/* Background full-bleed */}
-                <div
-                  style={{
-                    position: 'absolute',
-                    inset: 0,
-                    zIndex: 0,
-                    backgroundImage: `
-                      linear-gradient(to bottom, rgba(0,0,0,0.25), rgba(0,0,0,0.45)),
-                      url('/bckgrnd_ISHVARA_01.png')
-                    `,
-                    backgroundRepeat: 'no-repeat',
-                    backgroundPosition: 'right bottom',
-                    backgroundSize: 'cover',
-                  }}
-                />
-
-                {/* Foreground full-bleed anchored right-bottom */}
-                <img
-                  src="/fgrndgrnd_ISHVARA_01.png"
-                  alt=""
-                  style={{
-                    position: 'absolute',
-                    right: 0,
-                    bottom: 0,
-                    width: 'min(55vw, 780px)',
-                    maxWidth: '92vw',
-                    height: 'auto',
-                    pointerEvents: 'none',
-                    zIndex: 1,
-                  }}
-                />
-              </>
-            }
-          >
+          {/* Block 1: Hero / Awakening */}
+          <Section id="top" style={bg('01')}>
             <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
               <div style={{ color: 'rgba(255,255,255,0.75)', fontSize: 14 }}>Something is shifting.</div>
               <h1 style={{ margin: 0, color: 'white', fontSize: 'clamp(32px, 6vw, 56px)', lineHeight: 1.05 }}>
                 Ishvara Awakening
               </h1>
               <div style={{ color: 'rgba(255,255,255,0.85)', fontSize: 16, maxWidth: 720, lineHeight: 1.6 }}>
-		The open world has been found.<br /><br />
-		A home for an eternal adventure —<br />
-		where living forms of value, exchange,<br />
-		and creativity can prosper.
-		</div>
+                Collectables you can mint now — and later the same block becomes the presale buy module (coin purchase),
+                without rebuilding your site structure.
+              </div>
 
               <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', marginTop: 6 }}>
                 <a
@@ -718,7 +672,7 @@ export default function Page() {
             </div>
           </Section>
 
-          {/* Block 2: Mint */}
+          {/* ✅ Block 2: Mint (moved directly after Awakening) */}
           <Section id="mint" style={bg('02')}>
             <h2 style={{ margin: 0, color: 'white', fontSize: 28 }}>Mint / Buy</h2>
             <div style={{ color: 'rgba(255,255,255,0.75)', lineHeight: 1.7, marginBottom: 4 }}>
@@ -775,7 +729,7 @@ export default function Page() {
             </div>
           </Section>
 
-          {/* Block 6: FAQ */}
+          {/* ✅ Block 6: FAQ (new last block) */}
           <Section id="faq" style={bg('06')}>
             <h2 style={{ margin: 0, color: 'white', fontSize: 28 }}>FAQ</h2>
             <FAQ />
