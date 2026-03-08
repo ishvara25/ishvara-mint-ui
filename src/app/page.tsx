@@ -2,16 +2,12 @@
 
 import dynamic from 'next/dynamic';
 import Image from 'next/image';
-import { useEffect, useMemo, useState, type ReactNode } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 
 import { WalletAdapterNetwork } from '@solana/wallet-adapter-base';
 import { WalletProvider, useWallet } from '@solana/wallet-adapter-react';
 import { WalletModalProvider } from '@solana/wallet-adapter-react-ui';
-import {
-  PhantomWalletAdapter,
-  SolflareWalletAdapter,
-  LedgerWalletAdapter,
-} from '@solana/wallet-adapter-wallets';
+import { PhantomWalletAdapter, SolflareWalletAdapter, LedgerWalletAdapter } from '@solana/wallet-adapter-wallets';
 import '@solana/wallet-adapter-react-ui/styles.css';
 
 import { createUmi } from '@metaplex-foundation/umi-bundle-defaults';
@@ -20,6 +16,7 @@ import {
   generateSigner,
   isSome,
   publicKey,
+  some,
   transactionBuilder,
   type Option,
   type PublicKey,
@@ -52,6 +49,7 @@ function getNetwork(): WalletAdapterNetwork {
   const n = (process.env.NEXT_PUBLIC_NETWORK || '').toLowerCase().trim();
   if (n === 'devnet') return WalletAdapterNetwork.Devnet;
   if (n === 'testnet') return WalletAdapterNetwork.Testnet;
+  if (n === 'mainnet' || n === 'mainnet-beta') return WalletAdapterNetwork.Mainnet;
   return WalletAdapterNetwork.Mainnet;
 }
 
@@ -71,35 +69,28 @@ function getCandyMachineId(): string | null {
   return id ? id : null;
 }
 
-/** Small helper: section wrapper */
 function Section({
   id,
   children,
   style,
-  layers,
 }: {
   id: string;
-  children: ReactNode;
+  children: React.ReactNode;
   style?: React.CSSProperties;
-  layers?: ReactNode; // ✅ full-bleed layers (bg/fg) rendered behind content
 }) {
   return (
     <section
       id={id}
       style={{
-        position: 'relative',
         width: '100%',
         display: 'flex',
         justifyContent: 'center',
         padding: '72px 16px',
+        position: 'relative',
         overflow: 'hidden',
         ...style,
       }}
     >
-      {/* ✅ Full width layers go here */}
-      {layers}
-
-      {/* ✅ Content always above layers */}
       <div
         style={{
           width: '100%',
@@ -108,7 +99,7 @@ function Section({
           flexDirection: 'column',
           gap: 20,
           position: 'relative',
-          zIndex: 5,
+          zIndex: 2,
         }}
       >
         {children}
@@ -117,132 +108,101 @@ function Section({
   );
 }
 
-/** Simple icon buttons */
 function SocialRow() {
   const iconBtn: React.CSSProperties = {
     display: 'inline-flex',
     alignItems: 'center',
     gap: 10,
-    padding: '10px 12px',
+    padding: '10px 14px',
     borderRadius: 14,
-    border: '1px solid rgba(255,255,255,0.18)',
-    background: 'rgba(0,0,0,0.25)',
+    border: '1px solid rgba(255,255,255,0.16)',
+    background: 'rgba(18,10,30,0.42)',
     color: 'white',
     textDecoration: 'none',
     fontSize: 14,
+    fontWeight: 700,
+    lineHeight: 1.2,
   };
 
   return (
     <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
-      <a style={iconBtn} href="https://x.com/ishvara_x" target="_blank" rel="noreferrer">
-        <span>𝕏</span> <span>Follow</span>
+      <a style={iconBtn} href="https://x.com/ISHVA_X" target="_blank" rel="noreferrer">
+        <span>𝕏</span>
+        <span>Follow on X</span>
       </a>
-      <a style={iconBtn} href="#" target="_blank" rel="noreferrer">
-        <span>💬</span> <span>Discord</span>
+      <a style={iconBtn} href="#faq">
+        <span>?</span>
+        <span>FAQ</span>
       </a>
-      <a style={iconBtn} href="#" target="_blank" rel="noreferrer">
-        <span>📣</span> <span>Telegram</span>
+      <a style={iconBtn} href="#mint">
+        <span>◈</span>
+        <span>Mint</span>
       </a>
     </div>
   );
 }
 
-/** Email signup (front-end only). Later you plug this into a service. */
-function EmailCapture() {
-  const [email, setEmail] = useState('');
-  const [msg, setMsg] = useState<string | null>(null);
-
-  const submit = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!email.includes('@')) {
-      setMsg('Please enter a valid email.');
-      return;
-    }
-    setMsg('Saved (demo). Later we connect this to a mailing service.');
-    setEmail('');
-  };
-
-  return (
-    <form
-      onSubmit={submit}
-      style={{
-        display: 'flex',
-        gap: 10,
-        flexWrap: 'wrap',
-        alignItems: 'center',
-      }}
-    >
-      <input
-        value={email}
-        onChange={(e) => setEmail(e.target.value)}
-        placeholder="Email for updates"
-        style={{
-          flex: '1 1 240px',
-          padding: '12px 14px',
-          borderRadius: 14,
-          border: '1px solid rgba(255,255,255,0.18)',
-          background: 'rgba(0,0,0,0.25)',
-          color: 'white',
-          outline: 'none',
-        }}
-      />
-      <button
-        type="submit"
-        style={{
-          padding: '12px 16px',
-          borderRadius: 14,
-          border: '1px solid rgba(255,255,255,0.18)',
-          background: 'rgba(255,255,255,0.12)',
-          color: 'white',
-          cursor: 'pointer',
-          fontWeight: 600,
-        }}
-      >
-        Notify me
-      </button>
-      {msg && (
-        <div style={{ width: '100%', color: 'rgba(255,255,255,0.85)', fontSize: 13 }}>
-          {msg}
-        </div>
-      )}
-    </form>
-  );
-}
-
-/** FAQ block (UI-only) */
-function FAQ() {
+function FAQTop6() {
   const card: React.CSSProperties = {
     borderRadius: 18,
-    border: '1px solid rgba(255,255,255,0.16)',
-    background: 'rgba(0,0,0,0.35)',
+    border: '1px solid rgba(255,255,255,0.14)',
+    background: 'rgba(10, 8, 20, 0.42)',
     backdropFilter: 'blur(10px)',
-    padding: 16,
+    padding: 18,
     display: 'flex',
     flexDirection: 'column',
     gap: 8,
   };
 
-  const q: React.CSSProperties = { color: 'white', fontWeight: 900 };
-  const a: React.CSSProperties = { color: 'rgba(255,255,255,0.85)', lineHeight: 1.6 };
+  const q: React.CSSProperties = {
+    color: 'white',
+    fontWeight: 800,
+    fontSize: 15,
+    lineHeight: 1.45,
+  };
+
+  const a: React.CSSProperties = {
+    color: 'rgba(255,255,255,0.88)',
+    lineHeight: 1.75,
+    fontSize: 15,
+    fontWeight: 400,
+  };
+
+  const items = [
+    {
+      q: 'What is the ISHVA Launch NFT?',
+      a: 'The Launch NFT is the first participation marker in the ISHVA ecosystem. The launch is limited to 888 unique NFTs. Each one marks early support and participation from the beginning.',
+    },
+    {
+      q: 'Why mint the NFT?',
+      a: 'Minting the NFT means you support the philosophy of Ishvara, become part of the early participation layer, hold one of the 888 unique Launch NFTs, and gain access to future ecosystem developments.',
+    },
+    {
+      q: 'How do I mint it?',
+      a: 'Install a Solana wallet, fund it with enough SOL for the mint and network fees, connect it on this page, and approve the transaction. The live mint price is 0.2 SOL. After confirmation, the NFT appears in your wallet collectibles.',
+    },
+    {
+      q: 'Which wallet is recommended?',
+      a: 'Phantom and Solflare are the easiest options for most people. Ledger also works for users who already use hardware wallets.',
+    },
+    {
+      q: 'What is the difference between Ishvara, ISHVA, and the ISHVA coin?',
+      a: 'Ishvara is the philosophy. ISHVA is the participation layer and ecosystem that grows from it. The ISHVA coin comes later as a functional participation layer designed to support continuity, access, and contribution inside the ecosystem.',
+    },
+    {
+      q: 'Where can I ask questions or get support?',
+      a: 'For questions or technical help you can contact ishva_x@proton.me. Using an anonymous email address is fine. You can also follow updates on X at @ISHVA_X.',
+    },
+  ];
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-      <div style={card}>
-        <div style={q}>What is Collectable 1?</div>
-        <div style={a}>The first Ishvara badge. A symbolic entry point into the ecosystem.</div>
-      </div>
-      <div style={card}>
-        <div style={q}>Is this on mainnet?</div>
-        <div style={a}>Yes, depending on your environment settings (Network + RPC) configured in Vercel.</div>
-      </div>
-      <div style={card}>
-        <div style={q}>Do you store my wallet address?</div>
-        <div style={a}>No. This page does not store wallet identities on a server.</div>
-      </div>
-      <div style={card}>
-        <div style={q}>What happens after mint?</div>
-        <div style={a}>You can view the minted NFT on Solscan via the link shown after a successful mint.</div>
-      </div>
+      {items.map((it, idx) => (
+        <div key={idx} style={card}>
+          <div style={q}>{it.q}</div>
+          <div style={a}>{it.a}</div>
+        </div>
+      ))}
     </div>
   );
 }
@@ -386,6 +346,15 @@ export default function Page() {
       try {
         const mintArgs: Partial<DefaultGuardSetMintArgs> = {};
 
+        const defaultGuards: DefaultGuardSet | undefined = guard?.guards;
+        const solPaymentGuard: Option<SolPayment> | undefined = defaultGuards?.solPayment;
+
+        if (solPaymentGuard && isSome(solPaymentGuard)) {
+          mintArgs.solPayment = some({
+            destination: solPaymentGuard.value.destination,
+          });
+        }
+
         const nftSigner = generateSigner(umi);
 
         const tx = transactionBuilder()
@@ -424,24 +393,34 @@ export default function Page() {
       gap: 8,
       padding: '8px 12px',
       borderRadius: 999,
-      border: '1px solid rgba(255,255,255,0.18)',
-      background: 'rgba(0,0,0,0.25)',
+      border: '1px solid rgba(255,255,255,0.16)',
+      background: 'rgba(15,10,28,0.42)',
       color: 'white',
       fontSize: 13,
+      fontWeight: 700,
+      lineHeight: 1.2,
+    };
+
+    const bodyText: React.CSSProperties = {
+      color: 'rgba(255,255,255,0.88)',
+      lineHeight: 1.75,
+      fontSize: 16,
+      fontWeight: 400,
     };
 
     return (
       <div
         style={{
           width: '100%',
-          borderRadius: 22,
-          border: '1px solid rgba(255,255,255,0.16)',
-          background: 'rgba(0,0,0,0.35)',
+          borderRadius: 24,
+          border: '1px solid rgba(255,255,255,0.14)',
+          background: 'rgba(12, 8, 22, 0.48)',
           backdropFilter: 'blur(10px)',
-          padding: 18,
+          padding: 20,
           display: 'flex',
           flexDirection: 'column',
-          gap: 14,
+          gap: 16,
+          boxShadow: '0 0 30px rgba(0,0,0,0.18)',
         }}
       >
         <div
@@ -453,17 +432,31 @@ export default function Page() {
             flexWrap: 'wrap',
           }}
         >
-          <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
-            <span style={pill}>
-              Minted: {countMinted ?? '-'} / {countTotal ?? '-'}
-            </span>
-            <span style={pill}>Remaining: {countRemaining ?? '-'}</span>
-            <span style={pill}>{costInSol > 0 ? `Price: ${costInSol} SOL` : 'Free mint'}</span>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+            <div
+              style={{
+                color: 'rgba(255,255,255,0.72)',
+                fontSize: 12,
+                fontWeight: 800,
+                letterSpacing: 0.5,
+                textTransform: 'uppercase',
+                lineHeight: 1.2,
+              }}
+            >
+              ISHVA Launch NFT
+            </div>
+
+            <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
+              <span style={pill}>Minted: {countMinted ?? '-'} / {countTotal ?? '-'}</span>
+              <span style={pill}>Remaining: {countRemaining ?? '-'}</span>
+              <span style={pill}>{costInSol > 0 ? `Price: ${costInSol} SOL` : 'Free mint'}</span>
+            </div>
           </div>
+
           <WalletMultiButtonDynamic />
         </div>
 
-        <div style={{ display: 'flex', gap: 16, flexWrap: 'wrap', alignItems: 'center' }}>
+        <div style={{ display: 'flex', gap: 18, flexWrap: 'wrap', alignItems: 'center' }}>
           <div style={{ flex: '0 0 auto' }}>
             <Image
               src="/preview.gif"
@@ -475,14 +468,34 @@ export default function Page() {
             />
           </div>
 
-          <div style={{ flex: '1 1 260px', display: 'flex', flexDirection: 'column', gap: 10 }}>
-            <div style={{ fontSize: 18, fontWeight: 800, color: 'white' }}>
-              Collectable 1 — Ishvara Awakening
+          <div style={{ flex: '1 1 320px', display: 'flex', flexDirection: 'column', gap: 12 }}>
+            <div
+              style={{
+                fontSize: 30,
+                fontWeight: 900,
+                color: 'white',
+                lineHeight: 1.15,
+                letterSpacing: -0.3,
+              }}
+            >
+              Mint the Launch NFT
             </div>
-            <div style={{ color: 'rgba(255,255,255,0.85)', lineHeight: 1.5 }}>
-              Mint the first badge. Later this block becomes the presale buy module (coin purchase), without changing
-              the page structure.
+
+            <div style={bodyText}>
+              The ISHVA Launch NFT marks the beginning of participation in the ecosystem.
+              <br />
+              There will be <strong>888 unique Launch NFTs</strong>.
+              <br />
+              Each one marks early participation in the ISHVA ecosystem.
             </div>
+
+            <div style={bodyText}>
+              Minting the Launch NFT records your participation on-chain and sends the NFT to your wallet.
+              <br />
+              The mint price for the live launch is <strong>0.2 SOL</strong>.
+            </div>
+
+            <div style={{ height: 12 }} />
 
             {!mintCreated ? (
               <button
@@ -491,16 +504,18 @@ export default function Page() {
                 style={{
                   width: '100%',
                   maxWidth: 360,
-                  padding: '14px 16px',
+                  padding: '15px 18px',
                   borderRadius: 16,
                   border: '1px solid rgba(255,255,255,0.18)',
-                  background: mintDisabled ? 'rgba(255,255,255,0.10)' : 'rgba(170, 255, 120, 0.22)',
+                  background: mintDisabled ? 'rgba(255,255,255,0.10)' : 'rgba(145, 108, 255, 0.28)',
                   color: 'white',
-                  fontWeight: 800,
+                  fontWeight: 900,
+                  fontSize: 15,
+                  lineHeight: 1.2,
                   cursor: mintDisabled ? 'not-allowed' : 'pointer',
                 }}
               >
-                {loading ? 'Minting…' : `MINT ${costInSol > 0 ? `(${costInSol} SOL)` : ''}`}
+                {loading ? 'Minting…' : `Mint Launch NFT ${costInSol > 0 ? `(${costInSol} SOL)` : ''}`}
               </button>
             ) : (
               <a
@@ -519,6 +534,8 @@ export default function Page() {
                   color: 'white',
                   textDecoration: 'none',
                   fontWeight: 800,
+                  fontSize: 15,
+                  lineHeight: 1.2,
                   maxWidth: 520,
                 }}
               >
@@ -527,7 +544,7 @@ export default function Page() {
             )}
 
             {mintCreated && (
-              <div style={{ color: 'rgba(255,255,255,0.8)', fontSize: 13 }}>
+              <div style={{ color: 'rgba(255,255,255,0.8)', fontSize: 13, lineHeight: 1.5 }}>
                 Mint address: <code style={{ opacity: 0.95 }}>{base58PublicKey(mintCreated)}</code>
               </div>
             )}
@@ -536,11 +553,12 @@ export default function Page() {
               <div
                 style={{
                   borderRadius: 16,
-                  border: '1px solid rgba(255,255,255,0.16)',
+                  border: '1px solid rgba(255,255,255,0.14)',
                   background: 'rgba(0,0,0,0.25)',
                   padding: '10px 12px',
-                  color: 'rgba(255,255,255,0.9)',
+                  color: 'rgba(255,255,255,0.94)',
                   fontSize: 13,
+                  lineHeight: 1.55,
                 }}
               >
                 {mintMsg}
@@ -553,29 +571,60 @@ export default function Page() {
   };
 
   const navLink: React.CSSProperties = {
-    color: 'rgba(255,255,255,0.85)',
+    color: 'rgba(255,255,255,0.9)',
     textDecoration: 'none',
     fontSize: 14,
-    padding: '8px 10px',
+    padding: '10px 12px',
     borderRadius: 12,
+    fontWeight: 800,
+    letterSpacing: 0.2,
+    lineHeight: 1.2,
   };
 
-  // Background helper for blocks 02..06 (as before)
   const bg = (n: string): React.CSSProperties => ({
     backgroundImage: `
-      linear-gradient(to bottom, rgba(0,0,0,0.25), rgba(0,0,0,0.45)),
+      linear-gradient(to bottom, rgba(18,8,40,0.58), rgba(10,6,22,0.76)),
       url('/bckgrnd_ISHVARA_${n}.png')
     `,
-    backgroundSize: '100% auto',
-    backgroundPosition: 'center center',
+    backgroundSize: 'cover',
+    backgroundPosition: n === '01' || n === '03' ? 'center bottom' : 'center',
     backgroundRepeat: 'no-repeat',
+    backgroundColor: '#12081f',
   });
+
+  const disabledLink: React.CSSProperties = {
+    ...navLink,
+    opacity: 0.45,
+    cursor: 'not-allowed',
+    pointerEvents: 'none',
+  };
+
+  const headingStyle: React.CSSProperties = {
+    margin: 0,
+    color: 'white',
+    fontSize: 30,
+    fontWeight: 900,
+    lineHeight: 1.15,
+    letterSpacing: -0.3,
+  };
+
+  const bodyStyle: React.CSSProperties = {
+    color: 'rgba(255,255,255,0.9)',
+    fontSize: 16,
+    lineHeight: 1.8,
+    fontWeight: 400,
+  };
 
   return (
     <WalletProvider wallets={wallets} autoConnect>
       <WalletModalProvider>
-        <main style={{ minHeight: '100vh', width: '100%', background: '#0a0a0a' }}>
-          {/* Sticky top nav */}
+        <main
+          style={{
+            minHeight: '100vh',
+            width: '100%',
+            background: 'radial-gradient(circle at top, rgba(88,43,145,0.25), transparent 30%), #12081f',
+          }}
+        >
           <div
             style={{
               position: 'sticky',
@@ -586,7 +635,7 @@ export default function Page() {
               justifyContent: 'center',
               padding: '12px 16px',
               borderBottom: '1px solid rgba(255,255,255,0.08)',
-              background: 'rgba(0,0,0,0.45)',
+              background: 'rgba(10, 6, 22, 0.56)',
               backdropFilter: 'blur(10px)',
             }}
           >
@@ -612,177 +661,221 @@ export default function Page() {
                     placeItems: 'center',
                     fontWeight: 900,
                     color: 'white',
+                    lineHeight: 1,
                   }}
                 >
                   I
                 </div>
-                <div style={{ color: 'white', fontWeight: 900, letterSpacing: 0.3 }}>ISHVARA</div>
+                <div style={{ color: 'white', fontWeight: 900, letterSpacing: 0.3, lineHeight: 1.2 }}>ISHVARA</div>
               </div>
 
-              <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
-                <a style={navLink} href="#mint">Mint</a>
-                <a style={navLink} href="#vision">Vision</a>
-                <a style={navLink} href="#whitepaper">Whitepaper</a>
-                <a style={navLink} href="#community">Community</a>
-                <a style={navLink} href="#faq">FAQ</a>
+              <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                <a style={navLink} href="#mint">
+                  Mint
+                </a>
+                <a style={navLink} href="#vision">
+                  Vision
+                </a>
+                <span style={disabledLink}>Whitepaper</span>
+                <a style={navLink} href="#faq">
+                  FAQ
+                </a>
               </div>
             </div>
           </div>
 
-          {/* Block 1: Hero / Awakening + Foreground overlay */}
-          <Section
-            id="top"
-            style={{ background: '#0a0a0a' }}
-            layers={
-              <>
-                {/* Background full-bleed */}
-                <div
-                  style={{
-                    position: 'absolute',
-                    inset: 0,
-                    zIndex: 0,
-                    backgroundImage: `
-                      linear-gradient(to bottom, rgba(0,0,0,0.25), rgba(0,0,0,0.45)),
-                      url('/bckgrnd_ISHVARA_01.png')
-                    `,
-                    backgroundRepeat: 'no-repeat',
-                    backgroundPosition: 'right bottom',
-                    backgroundSize: 'cover',
-                  }}
-                />
-
-                {/* Foreground full-bleed anchored right-bottom */}
-                <img
-                  src="/fgrndgrnd_ISHVARA_01.png"
-                  alt=""
-                  style={{
-                    position: 'absolute',
-                    right: 0,
-                    bottom: 0,
-                    width: 'min(55vw, 780px)',
-                    maxWidth: '92vw',
-                    height: 'auto',
-                    pointerEvents: 'none',
-                    zIndex: 1,
-                  }}
-                />
-              </>
-            }
-          >
+          <Section id="top" style={bg('01')}>
             <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
-              <div style={{ color: 'rgba(255,255,255,0.75)', fontSize: 14 }}>Something is shifting.</div>
-              <h1 style={{ margin: 0, color: 'white', fontSize: 'clamp(32px, 6vw, 56px)', lineHeight: 1.05 }}>
-                Ishvara Awakening
-              </h1>
-              <div style={{ color: 'rgba(255,255,255,0.85)', fontSize: 16, maxWidth: 720, lineHeight: 1.6 }}>
-		The open world has been found.<br /><br />
-		A home for an eternal adventure —<br />
-		where living forms of value, exchange,<br />
-		and creativity can prosper.
-		</div>
+              <div style={{ color: 'rgba(255,255,255,0.78)', fontSize: 14, fontWeight: 700, lineHeight: 1.3 }}>
+                A philosophy — not a hierarchy
+              </div>
 
-              <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', marginTop: 6 }}>
+              <h1
+                style={{
+                  margin: 0,
+                  color: 'white',
+                  fontSize: 'clamp(36px, 6.5vw, 62px)',
+                  lineHeight: 1.02,
+                  fontWeight: 900,
+                  letterSpacing: -0.8,
+                }}
+              >
+                Ishvara
+              </h1>
+
+              <div
+                style={{
+                  color: 'rgba(255,255,255,0.92)',
+                  fontSize: 16,
+                  maxWidth: 780,
+                  lineHeight: 1.8,
+                  fontWeight: 400,
+                }}
+              >
+                Ishvara begins with a simple recognition:
+                <br />
+                <strong>coherence can exist without being imposed.</strong>
+                <br />
+                <br />
+                Creation doesn’t need permission from algorithms, trends, or urgency.
+                <br />
+                It isn’t a belief.
+                <br />
+                It isn’t a brand.
+                <br />
+                It’s the ground where honest work can emerge.
+                <br />
+                <br />
+                <strong>Ishvara is the philosophy.</strong>
+                <br />
+                <strong>ISHVA is how that recognition becomes participation.</strong>
+                <br />
+                <br />
+                The launch begins with <strong>888 unique NFTs</strong> for those who choose to participate early.
+              </div>
+
+              <div style={{ color: 'rgba(255,255,255,0.68)', fontSize: 13, fontWeight: 600, lineHeight: 1.5 }}>
+                Mint the Launch NFT only if the idea resonates.
+              </div>
+
+              <div style={{ height: 10 }} />
+
+              <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
                 <a
                   href="#mint"
                   style={{
-                    padding: '12px 16px',
+                    padding: '13px 18px',
                     borderRadius: 16,
                     border: '1px solid rgba(255,255,255,0.18)',
-                    background: 'rgba(255,255,255,0.12)',
+                    background: 'rgba(145, 108, 255, 0.26)',
                     color: 'white',
-                    fontWeight: 800,
+                    fontWeight: 900,
                     textDecoration: 'none',
+                    fontSize: 15,
+                    lineHeight: 1.2,
                   }}
                 >
                   Enter Mint
                 </a>
+
                 <a
-                  href="#whitepaper"
+                  href="#vision"
                   style={{
-                    padding: '12px 16px',
+                    padding: '13px 18px',
                     borderRadius: 16,
                     border: '1px solid rgba(255,255,255,0.18)',
-                    background: 'rgba(0,0,0,0.15)',
+                    background: 'rgba(0,0,0,0.18)',
                     color: 'white',
-                    fontWeight: 700,
+                    fontWeight: 800,
                     textDecoration: 'none',
+                    fontSize: 15,
+                    lineHeight: 1.2,
                   }}
                 >
-                  Read the Whitepaper
+                  Read the Vision
                 </a>
               </div>
 
-              <div style={{ marginTop: 8 }}>
-                <SocialRow />
+              <div style={{ height: 16 }} />
+              <SocialRow />
+            </div>
+          </Section>
+
+          <Section id="mint" style={bg('02')}>
+            <MintBlock />
+          </Section>
+
+          <Section id="vision" style={bg('03')}>
+            <h2 style={headingStyle}>Vision</h2>
+
+            <div
+              style={{
+                maxWidth: 880,
+                display: 'flex',
+                flexDirection: 'column',
+                gap: 16,
+              }}
+            >
+              <div
+                style={{
+                  color: 'white',
+                  fontSize: 20,
+                  fontWeight: 900,
+                  lineHeight: 1.35,
+                }}
+              >
+                <strong>Ishvara begins as a recognition.</strong>
+              </div>
+
+              <div style={bodyStyle}>
+                ISHVA turns that recognition into a living ecosystem where meaningful creation can emerge without
+                algorithmic pressure.
+              </div>
+
+              <div
+                style={{
+                  color: 'rgba(255,255,255,0.96)',
+                  lineHeight: 1.8,
+                  fontSize: 16,
+                  fontWeight: 700,
+                }}
+              >
+                People create because something real wants to take form — not because a system demands performance.
+              </div>
+
+              <div style={bodyStyle}>
+                What is made can be artistic, practical, intellectual, or communal.
+                <br />
+                Its value is not defined by category, but by the resonance it carries.
+              </div>
+
+              <div style={bodyStyle}>
+                The launch begins with <strong>888 unique NFTs</strong> that mark early participation and help sustain
+                what continues.
+              </div>
+
+              <div style={bodyStyle}>
+                <strong>Participation</strong> — support the philosophy and help the ecosystem take shape.
+                <br />
+                <strong>Access</strong> — NFT holders gain access to future platform initiatives and early releases.
+                <br />
+                <strong>Continuity</strong> — the NFT connects participants to future phases of the ISHVA ecosystem.
+              </div>
+
+              <div style={bodyStyle}>
+                <strong>Ishvara gives direction.</strong>
+                <br />
+                <strong>ISHVA sustains what follows.</strong>
+                <br />
+                <br />
+                The <strong>ISHVA coin</strong> comes later as a participation layer — not to lead the ecosystem, but
+                to support continuity, contribution, and alignment inside it.
+              </div>
+
+              <div
+                style={{
+                  color: 'rgba(213,190,255,0.98)',
+                  lineHeight: 1.6,
+                  fontSize: 22,
+                  fontWeight: 900,
+                  letterSpacing: 0.2,
+                }}
+              >
+                What resonates, continues.
               </div>
             </div>
           </Section>
 
-          {/* Block 2: Mint */}
-          <Section id="mint" style={bg('02')}>
-            <h2 style={{ margin: 0, color: 'white', fontSize: 28 }}>Mint / Buy</h2>
-            <div style={{ color: 'rgba(255,255,255,0.75)', lineHeight: 1.7, marginBottom: 4 }}>
-              This is the only “action block”. Today: mint NFT. Later: presale buy (coin).
+          <Section id="faq" style={bg('04')}>
+            <h2 style={headingStyle}>FAQ</h2>
+            <div style={{ color: 'rgba(255,255,255,0.8)', lineHeight: 1.75, fontSize: 15, fontWeight: 400 }}>
+              Plain answers for first-time visitors.
             </div>
-            <MintBlock />
-          </Section>
-
-          {/* Block 3: Vision */}
-          <Section id="vision" style={bg('03')}>
-            <h2 style={{ margin: 0, color: 'white', fontSize: 28 }}>Vision</h2>
-            <div style={{ color: 'rgba(255,255,255,0.85)', lineHeight: 1.7 }}>
-              Ishvara starts with Collectable 1 (Awakening). This page stays minimal. As the project matures, we add
-              presale, staking, and other modules — still on this same single-page structure.
-            </div>
-          </Section>
-
-          {/* Block 4: Whitepaper */}
-          <Section id="whitepaper" style={bg('04')}>
-            <h2 style={{ margin: 0, color: 'white', fontSize: 28 }}>Whitepaper</h2>
-            <div style={{ color: 'rgba(255,255,255,0.85)', lineHeight: 1.7 }}>
-              Later you can host a PDF in <code>/public</code> or on IPFS and link it here.
-            </div>
-            <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
-              <a
-                href="#"
-                style={{
-                  padding: '12px 16px',
-                  borderRadius: 16,
-                  border: '1px solid rgba(255,255,255,0.18)',
-                  background: 'rgba(255,255,255,0.10)',
-                  color: 'white',
-                  fontWeight: 800,
-                  textDecoration: 'none',
-                }}
-              >
-                Download (placeholder)
-              </a>
-            </div>
-          </Section>
-
-          {/* Block 5: Community */}
-          <Section id="community" style={bg('05')}>
-            <h2 style={{ margin: 0, color: 'white', fontSize: 28 }}>Community</h2>
-            <div style={{ color: 'rgba(255,255,255,0.85)', lineHeight: 1.7 }}>
-              Follow and stay updated. If you want, leave an email (optional).
-            </div>
-            <SocialRow />
-            <EmailCapture />
-
-            <div style={{ marginTop: 10, color: 'rgba(255,255,255,0.55)', fontSize: 12 }}>
-              Network: {process.env.NEXT_PUBLIC_NETWORK || 'mainnet'} • This site does not store wallet identities on a
-              server.
-            </div>
-          </Section>
-
-          {/* Block 6: FAQ */}
-          <Section id="faq" style={bg('06')}>
-            <h2 style={{ margin: 0, color: 'white', fontSize: 28 }}>FAQ</h2>
-            <FAQ />
+            <FAQTop6 />
           </Section>
 
           <div style={{ padding: '28px 16px', display: 'flex', justifyContent: 'center' }}>
-            <div style={{ width: '100%', maxWidth: 980, color: 'rgba(255,255,255,0.45)', fontSize: 12 }}>
+            <div style={{ width: '100%', maxWidth: 980, color: 'rgba(255,255,255,0.45)', fontSize: 12, lineHeight: 1.5 }}>
               © {new Date().getFullYear()} Ishvara — single page build.
             </div>
           </div>
