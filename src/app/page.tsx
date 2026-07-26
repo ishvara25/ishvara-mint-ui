@@ -1,3 +1,6 @@
+
+
+
 'use client';
 
 import dynamic from 'next/dynamic';
@@ -676,7 +679,14 @@ export default function Page() {
                 <a style={navLink} href="#vision">
                   Vision
                 </a>
-                <span style={disabledLink}>Whitepaper</span>
+                <a
+                  style={navLink}
+                  href="/whitepaper.pdf"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                >
+                  Whitepaper
+                </a>
                 <a style={navLink} href="#faq">
                   FAQ
                 </a>
@@ -773,6 +783,25 @@ export default function Page() {
                   }}
                 >
                   Read the Vision
+                </a>
+
+                <a
+                  href="/whitepaper.pdf"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  style={{
+                    padding: '13px 18px',
+                    borderRadius: 16,
+                    border: '1px solid rgba(255,255,255,0.18)',
+                    background: 'rgba(0,0,0,0.18)',
+                    color: 'white',
+                    fontWeight: 800,
+                    textDecoration: 'none',
+                    fontSize: 15,
+                    lineHeight: 1.2,
+                  }}
+                >
+                  Read the Whitepaper
                 </a>
               </div>
 
