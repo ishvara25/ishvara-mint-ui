@@ -133,6 +133,26 @@ function SocialRow() {
         <span>𝕏</span>
         <span>Follow on X</span>
       </a>
+      <a
+        style={iconBtn}
+        href="https://discord.gg/huQ7a4xNBc"
+        target="_blank"
+        rel="noopener noreferrer"
+        aria-label="Join ISHVA on Discord"
+      >
+        <span aria-hidden="true">◉</span>
+        <span>Discord</span>
+      </a>
+      <a
+        style={iconBtn}
+        href="https://paragraph.com/@ishva"
+        target="_blank"
+        rel="noopener noreferrer"
+        aria-label="Read ISHVA on Paragraph"
+      >
+        <span aria-hidden="true">¶</span>
+        <span>Paragraph</span>
+      </a>
       <a style={iconBtn} href="#faq">
         <span>?</span>
         <span>FAQ</span>
